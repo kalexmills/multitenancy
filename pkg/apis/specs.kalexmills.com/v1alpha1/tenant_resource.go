@@ -4,10 +4,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// +genclient:nonNamespaced
-// +kubebuilder:resource:scope=cluster
-// +kubebuilder:subresource:status
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+//+genclient:nonNamespaced
+//+kubebuilder:resource:scope=Cluster
+//+kubebuilder:subresource:status
+//+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // TenantResource describes a Kubernetes resource that is copied into Tenant namespaces.
 type TenantResource struct {

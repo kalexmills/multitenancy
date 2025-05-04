@@ -5,7 +5,7 @@ metadata:
   name: multitenancy-role
 rules:
 - apiGroups:
-  - specs.kalexmills.com/v1alpha1
+  - specs.kalexmills.com
   resources:
   - tenantresources
   - tenants

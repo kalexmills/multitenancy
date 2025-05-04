@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// +kubebuilder:rbac:groups=specs.kalexmills.com/v1alpha1,resources=tenants;tenantresources,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=specs.kalexmills.com,resources=tenants;tenantresources,verbs=get;list;watch;update
 
 const tenantQuotaName = "tenant-quota"
 const tenantLabel = "multitenancy.kalexmills.com/tenant" // TODO: move to separate package

@@ -12,7 +12,7 @@ spec:
     listKind: TenantResourceList
     plural: tenantresources
     singular: tenantresource
-  scope: cluster
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

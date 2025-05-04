@@ -93,9 +93,9 @@ kind-create: ## Create a new kind cluster
 kind-load: ## Load the image to kind cluster.
 	@kind load docker-image $(IMG)
 
-.PHONY: kind-inject
-kind-inject: ## Builds and loads a timestamped image into the kind cluster.
-	@IMG_TAG=$$(date +%s) $(MAKE) docker-build kind-load helm-install
+.PHONY: kind-refresh
+kind-refresh: ## Builds and loads a timestamped image into the kind cluster.
+	@IMG_TAG=$$(date +%s) $(MAKE) generate docker-build kind-load helm-install
 
 .PHONY: kind-delete
 kind-delete: ## Delete kind cluster
