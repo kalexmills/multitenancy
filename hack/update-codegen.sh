@@ -9,7 +9,7 @@ CODEGEN_PKG=./.bin
 
 source "${CODEGEN_PKG}/kube_codegen.sh"
 
-THIS_PKG="k8s.io/sample-controller"
+THIS_PKG=$(cat "${SCRIPT_ROOT}/go.mod" | grep "module" | head -n 1 | sed -e 's/module //g')
 
 kube::codegen::gen_helpers \
     --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt" \

@@ -2,7 +2,7 @@ package controllers
 
 import (
 	"context"
-	krtlite "github.com/kalexmills/krt-lite/pkg"
+	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/kalexmills/multitenancy/pkg/apis/specs.kalexmills.com/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -149,8 +149,6 @@ func (c *TenantController) namespaceHandler(ctx context.Context) func(krtlite.Ev
 					slog.String("err", err.Error()),
 					slog.String("ns", ns.Name))
 				status.Status = namespaceStatusError
-			} else {
-				status.Status = namespaceStatusPending // TODO: transition from pending >> ready ??
 			}
 		}
 		c.NamespaceStatuses.Update(status)
