@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"log/slog"
+	"os"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -17,18 +18,28 @@ func main() {
 
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		slog.Error("Could not fetch in cluster config: %v", err)
-	}
-	err = apiv1alpha1.Install(scheme.Scheme)
-	if err != nil {
-		slog.Error("Could not install scheme: %v", err)
-	}
-	c, err := client.NewWithWatch(cfg, client.Options{
-		Scheme: scheme.Scheme,
-	})
-	if err != nil {
-		slog.Error("Could not create client: %v", err)
+		slog.Error("Could not fetch in cluster config", "error", err)
+		os.Exit(1)
 	}
 
-	c := controllers.NewTenantController(ctx, c)
+	err = apiv1alpha1.Install(scheme.Scheme)
+	if err != nil {
+		slog.Error("Could not install scheme", "error", err)
+		os.Exit(1)
+	}
+
+	watchClient, err := client.NewWithWatch(cfg, client.Options{
+		Scheme: scheme.Scheme,
+	})
+
+	if err != nil {
+		slog.Error("Could not create client", "error", err)
+		os.Exit(1)
+	}
+
+	// TODO: OS signal handling
+	_ = controllers.NewTenantController(ctx, watchClient)
+
+	slog.Info("running controller")
+	<-ctx.Done()
 }

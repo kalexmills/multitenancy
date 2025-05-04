@@ -1,12 +1,13 @@
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:subresource:status
 
 // Tenant specifies a collection of namespaces which comprise a tenant.
 type Tenant struct {
@@ -24,8 +25,8 @@ type TenantSpec struct {
 	// Labels are added to every namespace created
 	Labels map[string]string `json:"labels,omitempty"`
 
-	// DefaultQuota specifies the resource quota for each namespace in the tenant.
-	DefaultQuota *corev1.ResourceQuotaSpec `json:"defaultQuota,omitempty"`
+	// Resources is a list to named TenantResources which are kept up-to-date in Tenant namespaces.
+	Resources []string `json:"resources"`
 }
 
 // TenantStatus is the status for a Tenant.
@@ -36,7 +37,7 @@ type TenantStatus struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// TenantList is a list of Tenant resources.
+// TenantList is a list of Tenant objects.
 type TenantList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`

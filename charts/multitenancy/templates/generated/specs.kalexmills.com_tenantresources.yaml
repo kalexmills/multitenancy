@@ -1,0 +1,81 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: tenantresources.specs.kalexmills.com
+spec:
+  group: specs.kalexmills.com
+  names:
+    kind: TenantResource
+    listKind: TenantResourceList
+    plural: tenantresources
+    singular: tenantresource
+  scope: cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: TenantResource describes a Kubernetes resource that is copied
+          into Tenant namespaces.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: TenantSpec is the spec for a Tenant
+            properties:
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels are added to every namespace created
+                type: object
+              namespaces:
+                items:
+                  type: string
+                type: array
+              resources:
+                description: Resources is a list to named TenantResources which are
+                  kept up-to-date in Tenant namespaces.
+                items:
+                  type: string
+                type: array
+            required:
+            - namespaces
+            - resources
+            type: object
+          status:
+            description: TenantStatus is the status for a Tenant.
+            properties:
+              namespaceStatuses:
+                additionalProperties:
+                  type: string
+                description: NamespaceStatuses maps from namespaces to their current
+                  status.
+                type: object
+            required:
+            - namespaceStatuses
+            type: object
+        required:
+        - spec
+        - status
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

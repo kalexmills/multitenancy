@@ -5,11 +5,14 @@ import (
 	krtlite "github.com/kalexmills/krt-lite"
 	"github.com/kalexmills/multitenancy/pkg/apis/specs.kalexmills.com/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"log/slog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// +kubebuilder:rbac:groups=specs.kalexmills.com/v1alpha1,resources=tenants;tenantresources,verbs=get;list;watch;update
 
 const tenantQuotaName = "tenant-quota"
 const tenantLabel = "multitenancy.kalexmills.com/tenant" // TODO: move to separate package
@@ -34,6 +37,7 @@ func (s NamespaceStatus) ResourceName() string {
 type TenantNamespace struct {
 	Namespace *corev1.Namespace
 	Tenant    *v1alpha1.Tenant
+	Resources []*v1alpha1.TenantResource
 }
 
 func (t TenantNamespace) ResourceName() string {
@@ -52,9 +56,9 @@ type TenantController struct {
 	client client.WithWatch
 
 	Tenants           krtlite.Collection[*v1alpha1.Tenant]
+	TenantResources   krtlite.Collection[*v1alpha1.TenantResource]
 	TenantNamespaces  krtlite.Collection[TenantNamespace]
 	NamespaceStatuses krtlite.StaticCollection[NamespaceStatus]
-	ResourceQuotas    krtlite.Collection[*corev1.ResourceQuota]
 }
 
 func NewTenantController(ctx context.Context, c client.WithWatch) *TenantController {
@@ -62,18 +66,21 @@ func NewTenantController(ctx context.Context, c client.WithWatch) *TenantControl
 		client: c,
 	}
 
-	tc.Tenants = krtlite.NewInformer[*v1alpha1.Tenant, v1alpha1.TenantList](ctx, c)
-	tc.TenantNamespaces = krtlite.FlatMap[*v1alpha1.Tenant, TenantNamespace](tc.Tenants, tc.toNamespaces)
-	tc.TenantNamespaces.Register(tc.namespaceHandler(ctx))
-	tc.NamespaceStatuses.Register(tc.statusHandler(ctx))
-	tc.ResourceQuotas = krtlite.Map[TenantNamespace, *corev1.ResourceQuota](tc.TenantNamespaces, tc.toResourceQuota)
-	tc.ResourceQuotas.Register(tc.resourceQuotaHandler(ctx))
+	tc.Tenants = krtlite.NewInformer[*v1alpha1.Tenant, v1alpha1.TenantList](ctx, c,
+		krtlite.WithContext(ctx))
+	tc.TenantResources = krtlite.NewInformer[*v1alpha1.TenantResource, v1alpha1.TenantResourceList](ctx, c,
+		krtlite.WithContext(ctx))
+	tc.TenantNamespaces = krtlite.FlatMap[*v1alpha1.Tenant, TenantNamespace](tc.Tenants, tc.toNamespaces,
+		krtlite.WithContext(ctx))
+	tc.TenantNamespaces.Register(tc.tenantNamespaceHandler(ctx))
 
 	return tc
 }
 
 func (c *TenantController) toNamespaces(ktx krtlite.Context, tenant *v1alpha1.Tenant) []TenantNamespace {
 	lbls := labels.Merge(tenant.Labels, map[string]string{tenantLabel: tenant.Name})
+
+	resources := krtlite.Fetch(ktx, c.TenantResources, krtlite.MatchNames(tenant.Spec.Resources...))
 
 	var result []TenantNamespace
 	for _, nsName := range tenant.Spec.Namespaces {
@@ -87,72 +94,78 @@ func (c *TenantController) toNamespaces(ktx krtlite.Context, tenant *v1alpha1.Te
 		result = append(result, TenantNamespace{
 			Namespace: ns,
 			Tenant:    tenant,
+			Resources: resources,
 		})
 	}
 
 	return result
 }
 
-func (c *TenantController) toResourceQuota(ktx krtlite.Context, tns TenantNamespace) **corev1.ResourceQuota {
-	if tns.Tenant.Spec.DefaultQuota == nil {
-		c.NamespaceStatuses.Update(tns.NewStatus(namespaceStatusReady))
-		return nil
+func (c *TenantController) tenantNamespaceHandler(ctx context.Context) func(krtlite.Event[TenantNamespace]) {
+	return func(ev krtlite.Event[TenantNamespace]) {
+		// err := c.reconcileNamespace(ctx, ev)
+
 	}
-	result := &corev1.ResourceQuota{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      tenantQuotaName,
-			Namespace: tns.Namespace.Name,
-		},
-		Spec: *tns.Tenant.Spec.DefaultQuota,
-	}
-	return &result
 }
 
-func (c *TenantController) namespaceHandler(ctx context.Context) func(krtlite.Event[TenantNamespace]) {
-	return func(ev krtlite.Event[TenantNamespace]) {
-		tns := ev.Latest()
-		ns := tns.Namespace
+func (c *TenantController) reconcileNamespace(ctx context.Context, ev krtlite.Event[TenantNamespace]) (exists bool, err error) {
+	var (
+		tns    = ev.Latest()
+		ns     = tns.Namespace
+		status = tns.NewStatus("")
+	)
 
-		status := tns.NewStatus("")
-
-		switch ev.Event {
-		case krtlite.EventAdd:
-			err := c.client.Create(ctx, ns)
-			if err != nil {
-				slog.ErrorContext(ctx, "error creating ns",
-					slog.String("err", err.Error()),
-					slog.String("ns", ns.Name))
-				status.Status = namespaceStatusError
-			} else {
-				status.Status = namespaceStatusPending
-			}
-		case krtlite.EventDelete:
-			err := c.client.Delete(ctx, ns)
-			if err != nil {
-				slog.ErrorContext(ctx, "error deleting ns",
-					slog.String("err", err.Error()),
-					slog.String("ns", ns.Name))
-
-				status.Status = namespaceStatusError
-			} else {
-				status.Status = namespaceStatusDeleting
-			}
-
-		case krtlite.EventUpdate:
-			if labels.Equals(ns.Labels, (*ev.Old).Namespace.Labels) {
-				return
-			}
-
-			err := c.client.Update(ctx, ns)
-			if err != nil {
-				slog.ErrorContext(ctx, "error updating ns",
-					slog.String("err", err.Error()),
-					slog.String("ns", ns.Name))
-				status.Status = namespaceStatusError
-			}
+	switch ev.Type {
+	case krtlite.EventAdd:
+		err = c.client.Create(ctx, ns)
+		if err != nil {
+			slog.ErrorContext(ctx, "error creating ns",
+				slog.String("err", err.Error()),
+				slog.String("ns", ns.Name))
+			status.Status = namespaceStatusError
+		} else {
+			status.Status = namespaceStatusPending
 		}
-		c.NamespaceStatuses.Update(status)
+
+		exists = true
+
+	case krtlite.EventDelete:
+		err = c.client.Delete(ctx, ns)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				exists = true
+			}
+			slog.ErrorContext(ctx, "error deleting ns",
+				slog.String("err", err.Error()),
+				slog.String("ns", ns.Name))
+
+			status.Status = namespaceStatusError
+		} else {
+			status.Status = namespaceStatusDeleting
+		}
+
+	case krtlite.EventUpdate:
+		exists = true
+
+		// the only changes we need to make are to namespace labels.
+		if labels.Equals(ns.Labels, (*ev.Old).Namespace.Labels) {
+			return exists, err
+		}
+
+		err = c.client.Update(ctx, ns)
+		if err == nil {
+			if errors.IsNotFound(err) {
+				exists = false
+			}
+			slog.ErrorContext(ctx, "error updating ns",
+				slog.String("err", err.Error()),
+				slog.String("ns", ns.Name))
+			status.Status = namespaceStatusError
+		}
 	}
+	c.NamespaceStatuses.Update(status)
+
+	return exists, err
 }
 
 func (c *TenantController) statusHandler(ctx context.Context) func(krtlite.Event[NamespaceStatus]) {
@@ -167,7 +180,7 @@ func (c *TenantController) statusHandler(ctx context.Context) func(krtlite.Event
 
 		tenant := *tenantPtr
 
-		switch ev.Event {
+		switch ev.Type {
 		case krtlite.EventAdd, krtlite.EventUpdate:
 			if tenant.Status.NamespaceStatuses == nil {
 				tenant.Status.NamespaceStatuses = map[string]string{
@@ -190,25 +203,36 @@ func (c *TenantController) statusHandler(ctx context.Context) func(krtlite.Event
 	}
 }
 
-func (c *TenantController) resourceQuotaHandler(ctx context.Context) func(krtlite.Event[*corev1.ResourceQuota]) {
-	return func(ev krtlite.Event[*corev1.ResourceQuota]) {
-		quota := ev.Latest()
+// simpleReconciler is an event handler which performs simple CRUD operations for each event using the provided client.
+// Errors are logged via slog.
+func simpleReconciler[T client.Object](ctx context.Context, cli client.Client) func(ev krtlite.Event[T]) {
+	slogArgs := func(err error, obj client.Object) []any {
+		return []any{
+			slog.String("err", err.Error()),
+			slog.String("kind", obj.GetObjectKind().GroupVersionKind().String()),
+			slog.String("name", obj.GetNamespace()),
+			slog.String("namespace", obj.GetNamespace()),
+		}
+	}
 
-		switch ev.Event {
+	return func(ev krtlite.Event[T]) {
+		obj := ev.Latest()
+
+		switch ev.Type {
 		case krtlite.EventAdd:
-			err := c.client.Create(ctx, quota)
+			err := cli.Create(ctx, obj)
 			if err != nil {
-				slog.ErrorContext(ctx, "error creating tenant quota", slog.String("err", err.Error()), slog.String("namespace", quota.Namespace))
+				slog.ErrorContext(ctx, "error creating object", slogArgs(err, obj)...)
 			}
 		case krtlite.EventUpdate:
-			err := c.client.Update(ctx, quota)
+			err := cli.Update(ctx, obj)
 			if err != nil {
-				slog.ErrorContext(ctx, "error updating tenant quota", slog.String("err", err.Error()), slog.String("namespace", quota.Namespace))
+				slog.ErrorContext(ctx, "error updating object", slogArgs(err, obj)...)
 			}
 		case krtlite.EventDelete:
-			err := c.client.Delete(ctx, quota)
+			err := cli.Delete(ctx, obj)
 			if err != nil {
-				slog.ErrorContext(ctx, "error deleting tenant quota", slog.String("err", err.Error()), slog.String("namespace", quota.Namespace))
+				slog.ErrorContext(ctx, "error deleting object", slogArgs(err, obj)...)
 			}
 		}
 	}
