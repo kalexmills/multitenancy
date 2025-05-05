@@ -12,7 +12,15 @@ rules:
   - create
   - delete
   - get
+  - list
   - update
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
 - apiGroups:
   - specs.kalexmills.com
   resources:

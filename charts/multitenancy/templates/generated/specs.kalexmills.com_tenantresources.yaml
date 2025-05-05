@@ -40,6 +40,10 @@ spec:
           spec:
             description: TenantResourceSpec is the spec for a TenantResource.
             properties:
+              manifest:
+                description: Manifest is the entire YAML spec to copy into each namespace
+                  for this resource.
+                x-kubernetes-preserve-unknown-fields: true
               resource:
                 description: Resource uniquely identifies the resource to create.
                 properties:
@@ -53,10 +57,6 @@ spec:
                 - group
                 - resource
                 - version
-                type: object
-              spec:
-                description: Manifest is the entire YAML spec to copy into each namespace
-                  for this resource.
                 type: object
             type: object
           status:

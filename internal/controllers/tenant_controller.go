@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"log/slog"
@@ -20,7 +21,9 @@ import (
 	"sync"
 )
 
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;create;update;delete
+// TODO: tighten up RBAC after testing
+//+kubebuilder:rbac:groups=*,resources=*,verbs=*
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=specs.kalexmills.com,resources=tenants;tenantresources,verbs=get;list;watch;update
 
 const tenantQuotaName = "tenant-quota"
@@ -54,6 +57,12 @@ func (t TenantNamespaceResources) Key() string {
 	return t.Tenant.Name + "/" + t.Namespace.Name
 }
 
+type GroupVersionResource schema.GroupVersionResource
+
+func (g GroupVersionResource) Key() string {
+	return strings.Join([]string{g.Group, g.Version, g.Resource}, ",")
+}
+
 type NamespaceResource struct {
 	Tenant               *v1alpha1.Tenant
 	Namespace            string
@@ -75,7 +84,7 @@ func (t TenantNamespaceResources) NewStatus(status string) NamespaceStatus {
 }
 
 type DynamicInformer struct {
-	GroupVersionResource metav1.GroupVersionResource
+	GroupVersionResource GroupVersionResource
 	InformerCollection   krtlite.Collection[*unstructured.Unstructured]
 
 	stopCh    chan struct{}
@@ -83,7 +92,7 @@ type DynamicInformer struct {
 }
 
 func (dc *DynamicInformer) Key() string {
-	return dc.GroupVersionResource.String()
+	return dc.GroupVersionResource.Key()
 }
 
 func (dc *DynamicInformer) Stop() {
@@ -106,10 +115,10 @@ type TenantController struct {
 	TenantResources    krtlite.Collection[*v1alpha1.TenantResource]
 	TenantNamespaces   krtlite.Collection[TenantNamespaceResources]
 	NamespaceResources krtlite.Collection[NamespaceResource]
-	ResourceTypesInUse krtlite.Collection[metav1.GroupVersionResource]
+	ResourceTypesInUse krtlite.Collection[GroupVersionResource]
 
 	// DynamicCollections is a collection of DynamicInformers which are registered for types being watched.
-	DynamicCollections krtlite.StaticCollection[DynamicInformer]
+	DynamicCollections krtlite.StaticCollection[*DynamicInformer]
 }
 
 func NewTenantController(ctx context.Context, watchClient client.WithWatch, dynamicClient dynamic.Interface) *TenantController {
@@ -129,13 +138,16 @@ func NewTenantController(ctx context.Context, watchClient client.WithWatch, dyna
 	tc.TenantNamespaces = krtlite.FlatMap[*v1alpha1.Tenant, TenantNamespaceResources](tc.Tenants, tc.toNamespaces, opts...)
 	tc.TenantNamespaces.Register(tc.reconcileNamespaceHandler(ctx))
 
-	// Track GVRs used in TenantNamespaces, and create and track a new DynamicInformer for each of them.
-	tc.ResourceTypesInUse = krtlite.FlatMap[TenantNamespaceResources, metav1.GroupVersionResource](tc.TenantNamespaces, tc.toGVRs, opts...)
-	tc.ResourceTypesInUse.Register(tc.dynamicCollectionHandler(ctx))
-
 	// Track individual Resources which need to be placed in Namespaces.
 	tc.NamespaceResources = krtlite.FlatMap[TenantNamespaceResources, NamespaceResource](tc.TenantNamespaces, tc.toNamespaceResources, opts...)
 	tc.NamespaceResources.Register(tc.namespaceResourceHandler(ctx))
+
+	// TODO: get dynamic collections working so we can watch TenantResources
+	// Track GVRs used in TenantNamespaces, and create and track a new DynamicInformer for each of them.
+	//tc.ResourceTypesInUse = krtlite.FlatMap[TenantNamespaceResources, GroupVersionResource](tc.TenantNamespaces, tc.toGVRs, opts...)
+	//tc.ResourceTypesInUse.Register(tc.dynamicCollectionHandler(ctx))
+
+	//tc.DynamicCollections = krtlite.NewStaticCollection[*DynamicInformer](tc.ResourceTypesInUse, nil, opts...)
 
 	return tc
 }
@@ -164,11 +176,11 @@ func (c *TenantController) toNamespaces(ktx krtlite.Context, tenant *v1alpha1.Te
 	return result
 }
 
-func (c *TenantController) toGVRs(ktx krtlite.Context, tns TenantNamespaceResources) []metav1.GroupVersionResource {
-	result := make(map[metav1.GroupVersionResource]struct{})
+func (c *TenantController) toGVRs(ktx krtlite.Context, tns TenantNamespaceResources) []GroupVersionResource {
+	result := make(map[GroupVersionResource]struct{})
 
 	for _, r := range tns.Resources {
-		result[r.Spec.Resource] = struct{}{}
+		result[GroupVersionResource(r.Spec.Resource)] = struct{}{}
 	}
 	return slices.Collect(maps.Keys(result))
 }
@@ -178,10 +190,16 @@ func (c *TenantController) toNamespaceResources(ktx krtlite.Context, tns TenantN
 	var result []NamespaceResource
 
 	for _, r := range tns.Resources {
-		mfst := r.Spec.Manifest
+		ext := r.Spec.Manifest
 
 		// copy the manifest and override any needed fields
-		obj := mfst.DeepCopy()
+		var mapAny map[string]any
+		if err := json.Unmarshal(ext.Raw, &mapAny); err != nil {
+			slog.Error("error unmarshalling manifest", "err", err)
+			continue
+		}
+
+		obj := &unstructured.Unstructured{Object: mapAny}
 
 		obj.SetNamespace(tns.Namespace.Name)
 		labels := obj.GetLabels()
@@ -204,11 +222,11 @@ func (c *TenantController) toNamespaceResources(ktx krtlite.Context, tns TenantN
 	return result
 }
 
-func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(krtlite.Event[metav1.GroupVersionResource]) {
-	return func(ev krtlite.Event[metav1.GroupVersionResource]) {
+func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(krtlite.Event[GroupVersionResource]) {
+	return func(ev krtlite.Event[GroupVersionResource]) {
 		gvr := ev.Latest()
 
-		coll := c.DynamicCollections.GetKey(gvr.String())
+		coll := c.DynamicCollections.GetKey(gvr.Key())
 
 		switch ev.Type {
 		case krtlite.EventAdd:
@@ -224,7 +242,7 @@ func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(kr
 				Resource: gvr.Resource,
 			}, krtlite.WithStop(stopCh))
 
-			c.DynamicCollections.Update(DynamicInformer{
+			c.DynamicCollections.Update(&DynamicInformer{
 				InformerCollection:   inf,
 				GroupVersionResource: gvr,
 				stopCh:               stopCh,
@@ -237,8 +255,11 @@ func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(kr
 
 		// shutdown the collection and remove it from the static collection.
 		case krtlite.EventDelete:
-			coll.Stop()
-			c.DynamicCollections.Delete(coll.Key())
+			if coll != nil {
+				coll := *coll
+				coll.Stop()
+				c.DynamicCollections.Delete(coll.Key())
+			}
 		}
 	}
 }
@@ -276,7 +297,14 @@ func (c *TenantController) namespaceResourceHandler(ctx context.Context) func(kr
 		case krtlite.EventUpdate:
 			_, err := dynamicClient.Update(ctx, obj, metav1.UpdateOptions{})
 			if err != nil {
-				slog.ErrorContext(ctx, "error updating object", "error", err)
+				if !errors.IsNotFound(err) {
+					slog.ErrorContext(ctx, "error updating object", "error", err)
+					return
+				}
+				_, err = dynamicClient.Create(ctx, obj, metav1.CreateOptions{})
+				if err != nil {
+					slog.ErrorContext(ctx, "error creating object during update", "error", err)
+				}
 			}
 		}
 	}
@@ -320,8 +348,12 @@ func (c *TenantController) reconcileNamespaceHandler(ctx context.Context) func(k
 
 			err = c.client.Update(ctx, ns)
 			if err != nil {
-				slog.ErrorContext(ctx, "error updating ns", slog.Any("err", err), slog.String("ns", ns.Name))
-				status.Status = namespaceStatusError
+				if !errors.IsNotFound(err) {
+					slog.ErrorContext(ctx, "error updating ns", slog.Any("err", err), slog.String("ns", ns.Name))
+					status.Status = namespaceStatusError
+					return
+				}
+				// TODO: create
 			}
 		}
 	}

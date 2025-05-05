@@ -2,7 +2,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -34,7 +34,9 @@ type TenantResourceSpec struct {
 	Resource metav1.GroupVersionResource `json:"resource"`
 
 	// Manifest is the entire YAML spec to copy into each namespace for this resource.
-	Manifest *unstructured.Unstructured `json:"spec"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
+	Manifest runtime.RawExtension `json:"manifest"`
 }
 
 // TenantResourceStatus is the status for a TenantResource.

@@ -1,0 +1,49 @@
+apiVersion: specs.kalexmills.com/v1alpha1
+kind: Tenant
+metadata:
+  name: sample-tenant
+spec:
+  namespaces:
+    - dev-tenant-1
+    - dev-tenant-2
+    - dev-tenant-3
+  resources:
+    - vault-secrets
+    - dev-resource-quota
+---
+apiVersion: specs.kalexmills.com/v1alpha1
+kind: TenantResource
+metadata:
+  name: dev-resource-quota
+spec:
+  resource:
+    group: ""
+    version: v1
+    resource: resourcequotas
+  manifest:
+    apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: dev-resource-quota
+    spec:
+      hard:
+        cpu: "5"
+        memory: "10Gi"
+        pods: "10"
+---
+apiVersion: specs.kalexmills.com/v1alpha1
+kind: TenantResource
+metadata:
+  name: vault-secrets
+spec:
+  resource:
+    group: ""
+    version: v1
+    resource: secrets
+  manifest:
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: vault-access-key
+    data:
+      key: "c3VwZXItc2VjcmV0LXZhbHVlCg=="

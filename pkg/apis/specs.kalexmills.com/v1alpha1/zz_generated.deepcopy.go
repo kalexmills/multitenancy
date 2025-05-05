@@ -135,10 +135,7 @@ func (in *TenantResourceList) DeepCopyObject() runtime.Object {
 func (in *TenantResourceSpec) DeepCopyInto(out *TenantResourceSpec) {
 	*out = *in
 	out.Resource = in.Resource
-	if in.Manifest != nil {
-		in, out := &in.Manifest, &out.Manifest
-		*out = (*in).DeepCopy()
-	}
+	in.Manifest.DeepCopyInto(&out.Manifest)
 	return
 }
 
