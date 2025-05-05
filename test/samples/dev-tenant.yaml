@@ -3,6 +3,10 @@ kind: Tenant
 metadata:
   name: sample-tenant
 spec:
+  labels:
+    demo.dev/tenant-class: dev
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.33
   namespaces:
     - dev-tenant-1
     - dev-tenant-2
