@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/kalexmills/multitenancy/internal/controllers"
 	apiv1alpha1 "github.com/kalexmills/multitenancy/pkg/apis/specs.kalexmills.com/v1alpha1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"log/slog"
@@ -31,14 +32,19 @@ func main() {
 	watchClient, err := client.NewWithWatch(cfg, client.Options{
 		Scheme: scheme.Scheme,
 	})
-
 	if err != nil {
-		slog.Error("Could not create client", "error", err)
+		slog.Error("Could not create controller-runtime client", "error", err)
 		os.Exit(1)
 	}
 
-	// TODO: OS signal handling
-	_ = controllers.NewTenantController(ctx, watchClient)
+	dynamicClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		slog.Error("Could not create dynamic k8s client", "error", err)
+		os.Exit(1)
+	}
+
+	// TODO: setup OS signal handling
+	_ = controllers.NewTenantController(ctx, watchClient, dynamicClient)
 
 	slog.Info("running controller")
 	<-ctx.Done()

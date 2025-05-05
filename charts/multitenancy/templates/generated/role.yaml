@@ -5,6 +5,15 @@ metadata:
   name: multitenancy-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - create
+  - delete
+  - get
+  - update
+- apiGroups:
   - specs.kalexmills.com
   resources:
   - tenantresources

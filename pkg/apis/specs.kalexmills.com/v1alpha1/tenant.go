@@ -20,6 +20,7 @@ type Tenant struct {
 
 // TenantSpec is the spec for a Tenant
 type TenantSpec struct {
+	//+required
 	Namespaces []string `json:"namespaces"`
 
 	// Labels are added to every namespace created

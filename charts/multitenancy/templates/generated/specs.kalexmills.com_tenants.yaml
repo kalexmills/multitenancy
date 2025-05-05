@@ -57,7 +57,6 @@ spec:
                 type: array
             required:
             - namespaces
-            - resources
             type: object
           status:
             description: TenantStatus is the status for a Tenant.
@@ -68,12 +67,7 @@ spec:
                 description: NamespaceStatuses maps from namespaces to their current
                   status.
                 type: object
-            required:
-            - namespaceStatuses
             type: object
-        required:
-        - spec
-        - status
         type: object
     served: true
     storage: true

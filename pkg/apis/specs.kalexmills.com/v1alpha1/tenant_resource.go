@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 //+genclient:nonNamespaced
@@ -9,19 +11,30 @@ import (
 //+kubebuilder:subresource:status
 //+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// TenantResource describes a Kubernetes resource that is copied into Tenant namespaces.
+// TenantResource describes a Kubernetes resource that is copied into Tenant namespaces and kept in-sync.
 type TenantResource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   TenantSpec   `json:"spec"`
-	Status TenantStatus `json:"status"`
+	Spec   TenantResourceSpec   `json:"spec"`
+	Status TenantResourceStatus `json:"status"`
+}
+
+func (t *TenantResource) SchemaGVR() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    t.Spec.Resource.Group,
+		Version:  t.Spec.Resource.Version,
+		Resource: t.Spec.Resource.Resource,
+	}
 }
 
 // TenantResourceSpec is the spec for a TenantResource.
 type TenantResourceSpec struct {
-	// Spec holds the entire object for the resource to be replicated across namespaces.
-	Spec map[string]string `json:"spec"`
+	// Resource uniquely identifies the resource to create.
+	Resource metav1.GroupVersionResource `json:"resource"`
+
+	// Manifest is the entire YAML spec to copy into each namespace for this resource.
+	Manifest *unstructured.Unstructured `json:"spec"`
 }
 
 // TenantResourceStatus is the status for a TenantResource.

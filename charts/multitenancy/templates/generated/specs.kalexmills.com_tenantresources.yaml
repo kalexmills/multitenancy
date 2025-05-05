@@ -18,7 +18,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: TenantResource describes a Kubernetes resource that is copied
-          into Tenant namespaces.
+          into Tenant namespaces and kept in-sync.
         properties:
           apiVersion:
             description: |-
@@ -38,42 +38,30 @@ spec:
           metadata:
             type: object
           spec:
-            description: TenantSpec is the spec for a Tenant
+            description: TenantResourceSpec is the spec for a TenantResource.
             properties:
-              labels:
-                additionalProperties:
-                  type: string
-                description: Labels are added to every namespace created
+              resource:
+                description: Resource uniquely identifies the resource to create.
+                properties:
+                  group:
+                    type: string
+                  resource:
+                    type: string
+                  version:
+                    type: string
+                required:
+                - group
+                - resource
+                - version
                 type: object
-              namespaces:
-                items:
-                  type: string
-                type: array
-              resources:
-                description: Resources is a list to named TenantResources which are
-                  kept up-to-date in Tenant namespaces.
-                items:
-                  type: string
-                type: array
-            required:
-            - namespaces
-            - resources
+              spec:
+                description: Manifest is the entire YAML spec to copy into each namespace
+                  for this resource.
+                type: object
             type: object
           status:
-            description: TenantStatus is the status for a Tenant.
-            properties:
-              namespaceStatuses:
-                additionalProperties:
-                  type: string
-                description: NamespaceStatuses maps from namespaces to their current
-                  status.
-                type: object
-            required:
-            - namespaceStatuses
+            description: TenantResourceStatus is the status for a TenantResource.
             type: object
-        required:
-        - spec
-        - status
         type: object
     served: true
     storage: true
