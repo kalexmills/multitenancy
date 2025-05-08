@@ -12,16 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type TenantNamespace struct {
-	Tenant    *v1alpha1.Tenant
-	Namespace *corev1.Namespace
-	Resources []*v1alpha1.TenantResource
-}
-
-func (t TenantNamespace) Key() string {
-	return t.Tenant.Name + "/" + t.Namespace.Name
-}
-
 // NamespaceController creates and reconciles namespaces. Serves as the home of
 type NamespaceController struct {
 	TenantNamespaces krtlite.Collection[TenantNamespace] // TODO: hide these behind a getter
