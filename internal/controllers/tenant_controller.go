@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"log/slog"
 	"maps"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"slices"
 	"strings"
@@ -52,7 +53,7 @@ func (g GroupVersionResource) GroupVersion() metav1.GroupVersion {
 	return metav1.GroupVersion{Group: g.Group, Version: g.Version}
 }
 
-type NamespaceResource struct {
+type DesiredResource struct {
 	Tenant               *v1alpha1.Tenant
 	Namespace            string
 	ResourceName         string
@@ -60,15 +61,15 @@ type NamespaceResource struct {
 	GroupVersionResource schema.GroupVersionResource
 }
 
-func (t NamespaceResource) Key() string {
+func (t DesiredResource) Key() string {
 	return strings.Join([]string{t.Tenant.Name, t.ResourceName, t.Namespace}, "/")
 }
 
 type DynamicInformer struct {
 	GroupVersionResource GroupVersionResource
-	Wrapped              krtlite.Collection[UnstructuredResource]
+	Wrapped              krtlite.Collection[ActualResource]
 	InformerCollection   krtlite.Collection[*unstructured.Unstructured]
-	Joined               krtlite.Collection[krtlite.Joined[NamespaceResource, UnstructuredResource]]
+	Joined               krtlite.Collection[krtlite.Joined[DesiredResource, ActualResource]]
 
 	stopCh    chan struct{}
 	closeStop *sync.Once
@@ -89,15 +90,15 @@ type GVRUnstructured struct {
 	GVR      schema.GroupVersionResource
 }
 
-type UnstructuredResource struct {
-	Unstructured *unstructured.Unstructured
+type ActualResource struct {
+	Object *unstructured.Unstructured
 }
 
-func (r UnstructuredResource) Key() string {
+func (r ActualResource) Key() string {
 	return strings.Join([]string{
-		r.Unstructured.GetLabels()[tenantLabel],
-		r.Unstructured.GetLabels()[tenantResourceLabel],
-		r.Unstructured.GetNamespace(),
+		r.Object.GetLabels()[tenantLabel],
+		r.Object.GetLabels()[tenantResourceLabel],
+		r.Object.GetNamespace(),
 	}, "/")
 }
 
@@ -110,7 +111,7 @@ type TenantController struct {
 	Tenants                  krtlite.Collection[*v1alpha1.Tenant]
 	TenantResources          krtlite.Collection[*v1alpha1.TenantResource]
 	TenantNamespaceResources krtlite.Collection[TenantNamespaceResources]
-	NamespaceResources       krtlite.Collection[NamespaceResource]
+	NamespaceResources       krtlite.Collection[DesiredResource]
 	ResourceTypesInUse       krtlite.Collection[GroupVersionResource]
 
 	// DynamicCollections is a collection of DynamicInformers which are registered for types being watched.
@@ -141,7 +142,7 @@ func NewTenantController(
 	tc.TenantNamespaceResources.Register(tc.reconcileNamespaceHandler(ctx))
 
 	// Track individual Resources which need to be placed in Namespaces.
-	tc.NamespaceResources = krtlite.FlatMap[TenantNamespaceResources, NamespaceResource](tc.TenantNamespaceResources, tc.mapToNamespaceResources, opts...)
+	tc.NamespaceResources = krtlite.FlatMap[TenantNamespaceResources, DesiredResource](tc.TenantNamespaceResources, tc.mapToNamespaceResources, opts...)
 
 	// Track GVRs used in TenantNamespaceResources, and create and track a new DynamicInformer for each of them.
 	tc.ResourceTypesInUse = krtlite.FlatMap[TenantNamespaceResources, GroupVersionResource](tc.TenantNamespaceResources, tc.mapToGVRs, opts...)
@@ -190,9 +191,9 @@ func (c *TenantController) mapToGVRs(ktx krtlite.Context, tns TenantNamespaceRes
 	return slices.Collect(maps.Keys(result))
 }
 
-// mapToNamespaceResources creates a NamespaceResource for every TenantNamespaceResource that needs to be created.
-func (c *TenantController) mapToNamespaceResources(ktx krtlite.Context, tns TenantNamespaceResources) []NamespaceResource {
-	var result []NamespaceResource
+// mapToNamespaceResources creates a DesiredResource for every TenantNamespaceResource that needs to be created.
+func (c *TenantController) mapToNamespaceResources(ktx krtlite.Context, tns TenantNamespaceResources) []DesiredResource {
+	var result []DesiredResource
 
 	for _, r := range tns.Resources {
 		ext := r.Spec.Manifest
@@ -218,7 +219,7 @@ func (c *TenantController) mapToNamespaceResources(ktx krtlite.Context, tns Tena
 		labels[tenantLabel] = tns.Tenant.Name
 		obj.SetLabels(labels)
 
-		result = append(result, NamespaceResource{
+		result = append(result, DesiredResource{
 			Tenant:               tns.Tenant,
 			Namespace:            tns.Namespace.Name,
 			ResourceName:         r.Name,
@@ -229,51 +230,71 @@ func (c *TenantController) mapToNamespaceResources(ktx krtlite.Context, tns Tena
 	return result
 }
 
-// tenantResourceHandler reconciles tenant resources.
-func (c *TenantController) tenantResourceHandler(ctx context.Context) func(krtlite.Event[krtlite.Joined[NamespaceResource, UnstructuredResource]]) {
-	return func(ev krtlite.Event[krtlite.Joined[NamespaceResource, UnstructuredResource]]) {
-		// TODO: make this work with the joined resource.
+// tenantResourceHandler reconciles tenant resources. Must be called from a Left joined collection.
+func (c *TenantController) tenantResourceHandler(ctx context.Context) func(krtlite.Event[krtlite.Joined[DesiredResource, ActualResource]]) {
+	return func(ev krtlite.Event[krtlite.Joined[DesiredResource, ActualResource]]) {
 		var (
-			nr            = ev.Latest()
-			obj           = nr.Object
-			dynamicClient = c.dynamic.Resource(nr.GroupVersionResource).Namespace(nr.Namespace)
+			latestNR      = ev.Latest().Left
+			dynamicClient = c.dynamic.Resource(latestNR.GroupVersionResource).Namespace(latestNR.Namespace)
+
+			desiredObj = ev.Latest().Left.Object // LeftJoined; so Left will never be nil
+			actualObj  *unstructured.Unstructured
 		)
 
 		switch ev.Type {
 		case krtlite.EventAdd:
-			_, err := dynamicClient.Create(ctx, obj, metav1.CreateOptions{})
+			_, err := dynamicClient.Create(ctx, desiredObj, metav1.CreateOptions{})
 			if err != nil {
 				if !errors.IsAlreadyExists(err) {
 					slog.ErrorContext(ctx, "error creating object", "error", err)
 				}
-				if _, err := dynamicClient.Update(ctx, obj, metav1.UpdateOptions{}); err != nil {
-					slog.ErrorContext(ctx, "error updating existing tenant resource", "error", err)
+
+				// overwrite whatever is there.
+				if _, err := dynamicClient.Update(ctx, desiredObj, metav1.UpdateOptions{}); err != nil {
+					slog.ErrorContext(ctx, "error updating object during create", "error", err)
 				}
 				return
 			}
 
-		case krtlite.EventDelete:
-			err := dynamicClient.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
-			if err != nil {
-				if !errors.IsNotFound(err) {
-					slog.ErrorContext(ctx, "error creating object", "error", err)
+		case krtlite.EventUpdate:
+			if ev.New.Right != nil {
+				actualObj = ev.New.Right.Object
+
+				if reflect.DeepEqual(cleanObj(actualObj), cleanObj(desiredObj)) {
+					return
 				}
 			}
 
-		case krtlite.EventUpdate:
-			_, err := dynamicClient.Update(ctx, obj, metav1.UpdateOptions{})
+			_, err := dynamicClient.Update(ctx, desiredObj, metav1.UpdateOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
 					slog.ErrorContext(ctx, "error updating object", "error", err)
 					return
 				}
-				_, err = dynamicClient.Create(ctx, obj, metav1.CreateOptions{})
+				_, err = dynamicClient.Create(ctx, desiredObj, metav1.CreateOptions{})
 				if err != nil {
 					slog.ErrorContext(ctx, "error creating object during update", "error", err)
 				}
 			}
+
+		case krtlite.EventDelete:
+			err := dynamicClient.Delete(ctx, desiredObj.GetName(), metav1.DeleteOptions{})
+			if err != nil {
+				if !errors.IsNotFound(err) {
+					slog.ErrorContext(ctx, "error deleting object", "error", err)
+				}
+			}
 		}
 	}
+}
+
+func cleanObj(obj *unstructured.Unstructured) *unstructured.Unstructured {
+	res := obj.DeepCopy()
+	unstructured.RemoveNestedField(res.Object, "metadata", "resourceVersion")
+	unstructured.RemoveNestedField(res.Object, "metadata", "generation")
+	unstructured.RemoveNestedField(res.Object, "metadata", "managedFields")
+	unstructured.RemoveNestedField(res.Object, "status")
+	return res
 }
 
 // reconcileNamespaceHandler is responsible for keeping tenant namespaces up-to-date.
@@ -360,8 +381,8 @@ func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(kr
 			// TODO: need WithConversion for simple mapping like this which doesn't deserve its own queue.
 
 			dynInf.Wrapped = krtlite.Map(dynInf.InformerCollection,
-				func(ktx krtlite.Context, i *unstructured.Unstructured) *UnstructuredResource {
-					return &UnstructuredResource{Unstructured: i}
+				func(ktx krtlite.Context, i *unstructured.Unstructured) *ActualResource {
+					return &ActualResource{Object: i}
 				},
 				krtlite.WithStop(stopCh),
 			)
@@ -369,7 +390,6 @@ func (c *TenantController) dynamicCollectionHandler(ctx context.Context) func(kr
 			c.DynamicCollections.Update(dynInf)
 
 			dynInf.Joined = krtlite.Join(c.NamespaceResources, dynInf.Wrapped, krtlite.LeftJoin, krtlite.WithStop(stopCh))
-
 			dynInf.Joined.Register(c.tenantResourceHandler(ctx))
 
 		case krtlite.EventUpdate:
