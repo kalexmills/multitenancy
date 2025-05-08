@@ -44,7 +44,7 @@ func main() {
 	}
 
 	// TODO: setup OS signal handling
-	_ = controllers.NewTenantController(ctx, watchClient, dynamicClient)
+	_ = controllers.NewManager(ctx, watchClient, dynamicClient)
 
 	slog.Info("running controller")
 	<-ctx.Done()
