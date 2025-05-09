@@ -61,6 +61,7 @@ generate: .generate-code .generate-crds ## Generates code and CRDs
 	@mkdir -p charts/multitenancy/templates/generated
 	@cp ./.out/k8sresources/* charts/multitenancy/templates/generated
 
+
 GOOS?=linux
 
 .PHONY: build

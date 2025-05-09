@@ -8,11 +8,25 @@ This project is presented as a sample controller built using krt-lite -- it is n
 A Kubernetes controller implementing a few minimal features for soft multitenancy. Allows users to keep resources for
 multitenancy in-sync across a tenant's namespaces.
 
-The multitenancy controller introduces two custom resources, `Tenant` and `TenantResource`. A `Tenant` is a set of 
-namespaces which are all subject to the same policies. Policies are enforced by ensuring a copy of each `TenantResource`
-is placed into each namespace, where it is not subject to change. 
+## Getting Started
 
-A `Tenant` describes a list of namespaces, along with a set of resources and labels which each namesapce must have. 
+We'll start by setting up an environment and demonstrating what the controller does.
+
+Checkout the repository and ensure [go](https://go.dev/doc/install), [kind](https://kind.sigs.k8s.io/docs/user/quick-start/),
+[make](https://www.gnu.org/software/make/), [kubectl](https://kubernetes.io/docs/tasks/tools/), and [helm](https://helm.sh/docs/intro/install/) 
+are all installed. This project uses [docker](https://docs.docker.com/get-started/get-docker/) to build container 
+images.
+
+Create the kind cluster using `make kind-create`. Once a cluster is started, you can use `make kind-refresh` to
+build and install the controller to the cluster.
+
+### Tenants
+
+The multitenancy controller introduces two custom resources, `Tenant` and `TenantResource`. A `Tenant` is a set of
+namespaces which are all subject to the same policies. Policies are enforced by ensuring a copy of each `TenantResource`
+is placed into each namespace, where it is not subject to change.
+
+A `Tenant` describes a list of namespaces, along with a set of resources and labels which each namespace must have.
 `spec.labels` contains a list of labels which are added to the namespace. `spec.resources` lists `TenantResources` which
 should be created in each namespace by name.
 
@@ -35,12 +49,27 @@ spec:
     - dev-resource-quota
 ```
 
-A `TenantResource` describes a Kubernetes resource which is automatically copied into tenant namespaces. Changes to
-TenantResource definitions are automatically applied to all copies. If a TenantResource is added to or removed from a
-Tenant, copies are added to or removed from all namespaces respectively. The `spec.resource` field describes the group,
-version, and resource to be created. `spec.manifest` contains the exact resource manifest to be created.
+Copy the contents above into a file named `sample-tenant.yaml` and apply it to the cluster using `kubectl apply -f sample-tenant.yaml`.
+You should see three new namespaces created, each one should have the labels that we specified.
 
-Examples can be found below.
+```shell
+$ kubectl get namespaces -l example.org/tenant-class
+NAME                 STATUS   AGE
+dev-tenant-1         Active   38s
+dev-tenant-2         Active   38s
+dev-tenant-3         Active   38s
+```
+
+The `Tenant` we created above names two `TenantResources`, but neither has been created yet. We'll do so in the next
+section.
+
+### TenantResources
+
+A `TenantResource` describes a Kubernetes resource which is automatically copied into tenant namespaces. Changes to
+TenantResource definitions are automatically applied to all copies. Adding or removing a TenantResource to/from a 
+Tenant results in the corresponding object being created or removed in the namespace.
+
+Examples can be found below. `dev-resource-quota` describes a ResourceQuota, while `vault-secrets` describes a secret. 
 
 ```yaml
 apiVersion: specs.kalexmills.com/v1alpha1
@@ -80,3 +109,21 @@ spec:
     data:
       key: "c3VwZXItc2VjcmV0LXZhbHVlCg=="
 ```
+
+Copy the above into a file named `sample-resources.yaml` and apply it using `kubectl apply -f sample-resources.yaml`.
+You should see ResourceQuotas and Secrets created in each namespace.
+
+```shell
+$ kubectl get resourcequota -A -l multitenancy/tenant
+NAMESPACE      NAME                 AGE  REQUEST                                LIMIT
+dev-tenant-1   dev-resource-quota   1m   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+dev-tenant-2   dev-resource-quota   1m   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+dev-tenant-3   dev-resource-quota   1m   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+
+$ kubectl get secrets -A -l multitenancy/tenant
+NAMESPACE      NAME               TYPE     DATA   AGE
+dev-tenant-1   vault-access-key   Opaque   1      19h
+dev-tenant-2   vault-access-key   Opaque   1      50m
+dev-tenant-3   vault-access-key   Opaque   1      19h
+```
+
