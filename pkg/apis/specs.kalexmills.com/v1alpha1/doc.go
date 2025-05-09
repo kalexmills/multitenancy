@@ -1,4 +1,4 @@
-//+k8s:deepcopy-gen=package
+//+k8s:deepcopy-gen=package,register
 //+groupName=specs.kalexmills.com
 //+kubebuilder:validation:Optional
 

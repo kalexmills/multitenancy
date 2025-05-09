@@ -6,7 +6,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-//+genclient:nonNamespaced
+// TODO: fix generated code (it's broken)
+
+//+genclient
 //+kubebuilder:resource:scope=Cluster
 //+kubebuilder:subresource:status
 //+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

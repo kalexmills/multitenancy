@@ -429,7 +429,7 @@ function kube::codegen::gen_openapi() {
 #   See note at the top about package structure below that.
 #
 # FLAGS:
-#   --one-input-apis <string>
+#   --one-input-api <string>
 #     A specific API (a directory) under the input-dir for which to generate a
 #     client.  If this is not set, clients for all APIs under the input-dir
 #     will be generated (under the --output-pkg).
