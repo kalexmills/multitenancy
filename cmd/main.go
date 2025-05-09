@@ -16,16 +16,17 @@ func main() {
 	ctx := context.Background()
 
 	slog.SetLogLoggerLevel(slog.LevelInfo) // TODO: replace w/ zap
+	l := slog.With("component", "setup")
 
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		slog.Error("Could not fetch in cluster config", "error", err)
+		l.Error("Could not fetch in cluster config", "error", err)
 		os.Exit(1)
 	}
 
 	err = apiv1alpha1.Install(scheme.Scheme)
 	if err != nil {
-		slog.Error("Could not install scheme", "error", err)
+		l.Error("Could not install scheme", "error", err)
 		os.Exit(1)
 	}
 
@@ -33,19 +34,19 @@ func main() {
 		Scheme: scheme.Scheme,
 	})
 	if err != nil {
-		slog.Error("Could not create controller-runtime client", "error", err)
+		l.Error("Could not create controller-runtime client", "error", err)
 		os.Exit(1)
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		slog.Error("Could not create dynamic k8s client", "error", err)
+		l.Error("Could not create dynamic k8s client", "error", err)
 		os.Exit(1)
 	}
 
 	// TODO: setup OS signal handling
 	_ = controllers.NewManager(ctx, watchClient, dynamicClient)
 
-	slog.Info("running controller")
+	l.Info("running controller")
 	<-ctx.Done()
 }

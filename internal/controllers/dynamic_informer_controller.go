@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	krtlite "github.com/kalexmills/krt-lite"
+	specsv1alpha1 "github.com/kalexmills/multitenancy/pkg/apis/specs.kalexmills.com/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"log/slog"
@@ -11,7 +12,8 @@ import (
 )
 
 type DynamicInformerController struct {
-	client dynamic.Interface
+	client          dynamic.Interface
+	tenantResources krtlite.Collection[*specsv1alpha1.TenantResource]
 
 	GVRs             krtlite.Collection[GroupVersionResource]
 	DynamicInformers krtlite.StaticCollection[DynamicInformer]
@@ -20,10 +22,12 @@ type DynamicInformerController struct {
 func NewDynamicInformerController(
 	ctx context.Context,
 	dynamicClient dynamic.Interface,
+	tenantResources krtlite.Collection[*specsv1alpha1.TenantResource],
 	tenantNamespaces krtlite.Collection[TenantNamespace],
 ) *DynamicInformerController {
 	res := &DynamicInformerController{
-		client: dynamicClient,
+		client:          dynamicClient,
+		tenantResources: tenantResources,
 	}
 
 	opts := []krtlite.CollectionOption{
@@ -33,13 +37,17 @@ func NewDynamicInformerController(
 	res.GVRs = krtlite.FlatMap(tenantNamespaces, res.mapToGVRs, opts...)
 	res.GVRs.Register(res.dynamicCollectionHandler(ctx))
 
+	res.DynamicInformers = krtlite.NewStaticCollection[DynamicInformer](res.GVRs, nil, opts...)
+
 	return res
 }
 
 func (c *DynamicInformerController) mapToGVRs(ktx krtlite.Context, tns TenantNamespace) []GroupVersionResource {
 	result := make(map[GroupVersionResource]struct{})
 
-	for _, r := range tns.Resources {
+	resources := krtlite.Fetch(ktx, c.tenantResources, krtlite.MatchNames(tns.Tenant.Spec.Resources...))
+
+	for _, r := range resources {
 		result[GroupVersionResource{r.Spec.Resource}] = struct{}{}
 	}
 	return slices.Collect(maps.Keys(result))
@@ -49,12 +57,14 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 	return func(ev krtlite.Event[GroupVersionResource]) {
 		gvr := ev.Latest()
 
+		l := slog.With("gvr", gvr.Key(), "event", ev.Type)
+
 		coll := c.DynamicInformers.GetKey(gvr.Key())
 
 		switch ev.Type {
 		case krtlite.EventAdd:
 			if coll != nil {
-				slog.InfoContext(ctx, "received add event for existing dynamic collection", "gvr", gvr)
+				l.InfoContext(ctx, "received add event for existing dynamic collection", "gvr", gvr)
 				return
 			}
 
@@ -65,8 +75,6 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 			}
 
 			stopCh := make(chan struct{})
-
-			slog.InfoContext(ctx, "starting dynamic informer", "gvr", gvr.Key())
 
 			inf := krtlite.NewDynamicInformer(c.client, schemaGVR,
 				krtlite.WithFilterByLabel(tenantResourceLabel),
@@ -79,8 +87,10 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 				stopCh: stopCh,
 			})
 
+			l.InfoContext(ctx, "started dynamic informer")
+
 		case krtlite.EventUpdate:
-			slog.ErrorContext(ctx, "error, GroupVersionResource was updated -- entire object is key", "event", ev)
+			l.ErrorContext(ctx, "error, GroupVersionResource was updated -- entire object is key")
 
 		// shutdown the collection and remove it from the static collection.
 		case krtlite.EventDelete:
@@ -88,6 +98,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 				coll := *coll
 				coll.Stop()
 				c.DynamicInformers.Delete(coll.Key())
+				l.InfoContext(ctx, "deleted dynamic informer")
 			}
 		}
 	}

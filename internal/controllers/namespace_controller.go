@@ -79,19 +79,23 @@ func (c *NamespaceController) reconcileNamespaces(ctx context.Context) func(krtl
 			err error
 		)
 
+		l := slog.With("tenant", tns.Tenant.Name, "namespace", tns.Namespace.Name, "event", ev.Type)
+
 		switch ev.Type {
 		case krtlite.EventAdd:
 			if ns.CreationTimestamp.IsZero() {
 				err = c.client.Create(ctx, ns)
 				if !errors.IsAlreadyExists(err) {
-					slog.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
+					l.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
 					return
 				}
 			}
 			err = c.client.Update(ctx, ns)
 			if err != nil {
-				slog.ErrorContext(ctx, "error updating namespace", "err", err, "ns", ns.Name)
+				l.ErrorContext(ctx, "error updating namespace", "err", err, "ns", ns.Name)
 			}
+
+			l.InfoContext(ctx, "namespace created")
 
 		case krtlite.EventUpdate:
 			// the only changes we need to make are to namespace labels.
@@ -102,22 +106,27 @@ func (c *NamespaceController) reconcileNamespaces(ctx context.Context) func(krtl
 			err = c.client.Update(ctx, ns)
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					slog.ErrorContext(ctx, "error updating ns", "err", err, "ns", ns.Name)
+					l.ErrorContext(ctx, "error updating ns", "err", err, "ns", ns.Name)
 					return
 				}
 				err := c.client.Create(ctx, ns)
 				if err != nil {
-					slog.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
+					l.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
 				}
 			}
 
+			l.InfoContext(ctx, "namespace updated")
+
 		case krtlite.EventDelete:
-			slog.Info("namespace no longer managed by tenant")
+			l.Info("namespace no longer managed by tenant")
+
+			// do not delete the namespace, remove the tenantResource label instead.
 			delete(ns.Labels, tenantResourceLabel)
 			err := c.client.Update(ctx, ns)
 			if err != nil {
-				slog.ErrorContext(ctx, "error updating namespace to remove tenant label", "err", err, "ns", ns.Name)
+				l.ErrorContext(ctx, "error updating namespace to remove tenant label", "err", err, "ns", ns.Name)
 			}
+			l.InfoContext(ctx, "namespace deleted")
 		}
 	}
 }

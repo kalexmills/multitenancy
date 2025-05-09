@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	krtlite "github.com/kalexmills/krt-lite"
+	"github.com/kalexmills/multitenancy/pkg/apis/specs.kalexmills.com/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,22 +18,27 @@ const tenantResourceLabel = "multitenancy/tenant-resource"
 
 // TenantResourceController creates tenant resources.
 type TenantResourceController struct {
-	client dynamic.Interface
+	client          dynamic.Interface
+	tenantResources krtlite.Collection[*v1alpha1.TenantResource]
 
 	DynamicResources krtlite.Collection[DesiredTenantResource]
 }
 
-func NewDynamicResourceController(
+func NewTenantResourceController(
 	ctx context.Context,
 	client dynamic.Interface,
+	tenantResources krtlite.Collection[*v1alpha1.TenantResource],
 	tenantNamespaces krtlite.Collection[TenantNamespace],
 	dynamicInformers krtlite.Collection[DynamicInformer],
 ) *TenantResourceController {
 	res := &TenantResourceController{
-		client: client,
+		client:          client,
+		tenantResources: tenantResources,
 	}
 
-	opts := []krtlite.CollectionOption{krtlite.WithContext(ctx)}
+	opts := []krtlite.CollectionOption{
+		krtlite.WithContext(ctx),
+	}
 
 	res.DynamicResources = krtlite.FlatMap(tenantNamespaces, res.namespaceToDesiredResource, opts...) // TODO: should this also return the collection?
 	dynamicInformers.Register(res.joinAndRegister(ctx))
@@ -44,7 +50,9 @@ func NewDynamicResourceController(
 func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Context, tns TenantNamespace) []DesiredTenantResource {
 	var result []DesiredTenantResource
 
-	for _, r := range tns.Resources {
+	resources := krtlite.Fetch(ktx, c.tenantResources, krtlite.MatchNames(tns.Tenant.Spec.Resources...))
+
+	for _, r := range resources {
 		ext := r.Spec.Manifest
 
 		var mapAny map[string]any
@@ -88,6 +96,8 @@ func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krt
 
 		dynInf := ev.Latest()
 
+		slog.InfoContext(ctx, "starting informer", "gvr", dynInf.Key())
+
 		// map resources from the informer to align the keyspaces.
 		actualResources := krtlite.Map(dynInf.Collection, c.toTenantResource,
 			dynInf.StopWith())
@@ -115,6 +125,9 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 			desiredObj = ev.Latest().Left.Object // LeftJoined; so Left will never be nil
 			actualObj  *unstructured.Unstructured
 		)
+		l := slog.With("gvr", latestNR.GroupVersionResource.String(),
+			"namespace", latestNR.Namespace,
+			"resourceName", latestNR.ResourceName)
 
 		switch ev.Type {
 		case krtlite.EventAdd:
@@ -130,12 +143,14 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 				}
 				return
 			}
+			l.InfoContext(ctx, "resource created")
 
 		case krtlite.EventUpdate:
 			if ev.New.Right != nil {
 				actualObj = ev.New.Right.Object
 
 				if reflect.DeepEqual(cleanObj(actualObj), cleanObj(desiredObj)) {
+					l.InfoContext(ctx, "update suppressed -- no substantial modification was found")
 					return
 				}
 			}
@@ -143,14 +158,16 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 			_, err := dynamicClient.Update(ctx, desiredObj, metav1.UpdateOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					slog.ErrorContext(ctx, "error updating object", "error", err)
+					l.ErrorContext(ctx, "error updating object", "error", err)
 					return
 				}
 				_, err = dynamicClient.Create(ctx, desiredObj, metav1.CreateOptions{})
 				if err != nil {
-					slog.ErrorContext(ctx, "error creating object during update", "error", err)
+					l.ErrorContext(ctx, "error creating object during update", "error", err)
 				}
 			}
+
+			l.InfoContext(ctx, "resource updated")
 
 		case krtlite.EventDelete:
 			err := dynamicClient.Delete(ctx, desiredObj.GetName(), metav1.DeleteOptions{})
@@ -159,6 +176,7 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 					slog.ErrorContext(ctx, "error deleting object", "error", err)
 				}
 			}
+			l.InfoContext(ctx, "resource deleted")
 		}
 	}
 }

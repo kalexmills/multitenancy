@@ -49,11 +49,11 @@ func NewManager(
 	tc.cNamespaces = NewNamespaceController(ctx, watchClient,
 		tc.Namespaces, tc.Tenants)
 
-	tc.cDynamicInformers = NewDynamicInformerController(ctx, dynamicClient,
+	tc.cDynamicInformers = NewDynamicInformerController(ctx, dynamicClient, tc.TenantResources,
 		tc.cNamespaces.TenantNamespaces)
 
-	tc.cDynamicResources = NewDynamicResourceController(ctx, dynamicClient,
-		tc.cNamespaces.TenantNamespaces, tc.cDynamicInformers.DynamicInformers)
+	tc.cDynamicResources = NewTenantResourceController(ctx, dynamicClient,
+		tc.TenantResources, tc.cNamespaces.TenantNamespaces, tc.cDynamicInformers.DynamicInformers)
 
 	return tc
 }

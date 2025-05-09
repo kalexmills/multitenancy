@@ -8,7 +8,6 @@ import (
 type TenantNamespace struct {
 	Tenant    *v1alpha1.Tenant
 	Namespace *corev1.Namespace
-	Resources []*v1alpha1.TenantResource
 }
 
 func (t TenantNamespace) Key() string {
