@@ -1,11 +1,16 @@
 # multitenancy
-Multitenancy controller built using krtlite -- basically a clone of a portion of features from Capsule.
+Sample controller built using [krt-lite](https://github.com/kalexmills/krt-lite).
 
 ## Overview
 
-This controller introduces two custom resources, `Tenant` and `TenantResource`. A `Tenant` is a set of namespaces which
-are all subject to the same policies. Policies are enforced by ensuring each `TenantResource` is cloned into each 
-namespace, where it is not subject to change.
+This project is presented as a sample controller built using krt-lite -- it is not intended for production use.
+
+A Kubernetes controller implementing a few minimal features for soft multitenancy. Allows users to keep resources for
+multitenancy in-sync across a tenant's namespaces.
+
+The multitenancy controller introduces two custom resources, `Tenant` and `TenantResource`. A `Tenant` is a set of 
+namespaces which are all subject to the same policies. Policies are enforced by ensuring a copy of each `TenantResource`
+is placed into each namespace, where it is not subject to change. 
 
 A `Tenant` describes a list of namespaces, along with a set of resources and labels which each namesapce must have. 
 `spec.labels` contains a list of labels which are added to the namespace. `spec.resources` lists `TenantResources` which
