@@ -17,7 +17,7 @@ import (
 )
 
 // TenantResourceInformer provides access to a shared informer and lister for
-// TenantResources.
+// tenantResources.
 type TenantResourceInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() specskalexmillscomv1alpha1.TenantResourceLister

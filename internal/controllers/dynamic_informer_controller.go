@@ -15,8 +15,9 @@ type DynamicInformerController struct {
 	client          dynamic.Interface
 	tenantResources krtlite.Collection[*specsv1alpha1.TenantResource]
 
-	GVRs             krtlite.Collection[GroupVersionResource]
-	DynamicInformers krtlite.StaticCollection[DynamicInformer]
+	// collections owned by this controller.
+	gvrCollection    krtlite.Collection[GroupVersionResource]
+	dynamicInformers krtlite.StaticCollection[DynamicInformer]
 }
 
 func NewDynamicInformerController(
@@ -34,12 +35,20 @@ func NewDynamicInformerController(
 		krtlite.WithContext(ctx),
 	}
 
-	res.GVRs = krtlite.FlatMap(tenantNamespaces, res.mapToGVRs, opts...)
-	res.GVRs.Register(res.dynamicCollectionHandler(ctx))
+	res.gvrCollection = krtlite.FlatMap(tenantNamespaces, res.mapToGVRs, opts...)
+	res.gvrCollection.Register(res.dynamicCollectionHandler(ctx))
 
-	res.DynamicInformers = krtlite.NewStaticCollection[DynamicInformer](res.GVRs, nil, opts...)
+	res.dynamicInformers = krtlite.NewStaticCollection[DynamicInformer](res.gvrCollection, nil, opts...)
 
 	return res
+}
+
+func (c *DynamicInformerController) GVRCollection() krtlite.Collection[GroupVersionResource] {
+	return c.gvrCollection
+}
+
+func (c *DynamicInformerController) DynamicInformers() krtlite.Collection[DynamicInformer] {
+	return c.dynamicInformers
 }
 
 func (c *DynamicInformerController) mapToGVRs(ktx krtlite.Context, tns TenantNamespace) []GroupVersionResource {
@@ -59,7 +68,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 
 		l := slog.With("gvr", gvr.Key(), "event", ev.Type)
 
-		coll := c.DynamicInformers.GetKey(gvr.Key())
+		coll := c.dynamicInformers.GetKey(gvr.Key())
 
 		switch ev.Type {
 		case krtlite.EventAdd:
@@ -80,7 +89,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 				krtlite.WithFilterByLabel(tenantResourceLabel),
 				krtlite.WithStop(stopCh))
 
-			c.DynamicInformers.Update(DynamicInformer{
+			c.dynamicInformers.Update(DynamicInformer{
 				Collection: inf,
 
 				gvrKey: gvr,
@@ -97,7 +106,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 			if coll != nil {
 				coll := *coll
 				coll.Stop()
-				c.DynamicInformers.Delete(coll.Key())
+				c.dynamicInformers.Delete(coll.Key())
 				l.InfoContext(ctx, "deleted dynamic informer")
 			}
 		}

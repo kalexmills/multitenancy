@@ -15,7 +15,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	slog.SetLogLoggerLevel(slog.LevelInfo) // TODO: replace w/ zap
+	slog.SetLogLoggerLevel(slog.LevelInfo)
 	l := slog.With("component", "setup")
 
 	cfg, err := rest.InClusterConfig()
@@ -44,7 +44,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: setup OS signal handling
 	_ = controllers.NewManager(ctx, watchClient, dynamicClient)
 
 	l.Info("running controller")

@@ -17,7 +17,7 @@ import (
 )
 
 // TenantInformer provides access to a shared informer and lister for
-// Tenants.
+// tenants.
 type TenantInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() specskalexmillscomv1alpha1.TenantLister

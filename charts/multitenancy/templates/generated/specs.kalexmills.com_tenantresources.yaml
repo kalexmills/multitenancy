@@ -43,6 +43,8 @@ spec:
               manifest:
                 description: Manifest is the entire YAML spec to copy into each namespace
                   for this resource.
+                type: object
+                x-kubernetes-embedded-resource: true
                 x-kubernetes-preserve-unknown-fields: true
               resource:
                 description: Resource uniquely identifies the resource to create.

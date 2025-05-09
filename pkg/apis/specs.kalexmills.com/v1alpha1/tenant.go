@@ -26,7 +26,7 @@ type TenantSpec struct {
 	// Labels are added to every namespace created
 	Labels map[string]string `json:"labels,omitempty"`
 
-	// Resources is a list to named TenantResources which are kept up-to-date in Tenant namespaces.
+	// Resources is a list to named tenantResources which are kept up-to-date in Tenant namespaces.
 	Resources []string `json:"resources"`
 }
 

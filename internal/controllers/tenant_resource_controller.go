@@ -21,7 +21,8 @@ type TenantResourceController struct {
 	client          dynamic.Interface
 	tenantResources krtlite.Collection[*v1alpha1.TenantResource]
 
-	DynamicResources krtlite.Collection[DesiredTenantResource]
+	// collections owned by this controller.
+	desiredTenantResources krtlite.Collection[DesiredTenantResource]
 }
 
 func NewTenantResourceController(
@@ -40,16 +41,23 @@ func NewTenantResourceController(
 		krtlite.WithContext(ctx),
 	}
 
-	res.DynamicResources = krtlite.FlatMap(tenantNamespaces, res.namespaceToDesiredResource, opts...) // TODO: should this also return the collection?
+	res.desiredTenantResources = krtlite.FlatMap(tenantNamespaces, res.namespaceToDesiredResource, opts...)
 	dynamicInformers.Register(res.joinAndRegister(ctx))
 
 	return res
+}
+
+func (c *TenantResourceController) DesiredTenantResources() krtlite.Collection[DesiredTenantResource] {
+	return c.desiredTenantResources
 }
 
 // namespaceToDesiredResource maps a TenantNamespace to a list of its DesiredTenantResources.
 func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Context, tns TenantNamespace) []DesiredTenantResource {
 	var result []DesiredTenantResource
 
+	// Fetch returns all TenantResources matching the resources specified in the Tenant. By passing ktx we create a
+	// dependency on the tenantResources collection. Any change to resources returned from this fetch operation will
+	// re-trigger this Mapper and could result in sending an Update or Delete event downstream.
 	resources := krtlite.Fetch(ktx, c.tenantResources, krtlite.MatchNames(tns.Tenant.Spec.Resources...))
 
 	for _, r := range resources {
@@ -86,7 +94,7 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 	return result
 }
 
-// joinAndRegister joins ActualResources from newly created DynamicInformers with DynamicResources managed by this
+// joinAndRegister joins ActualResources from newly created DesiredTenantResources with desiredTenantResources managed by this
 // controller.
 func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krtlite.Event[DynamicInformer]) {
 	return func(ev krtlite.Event[DynamicInformer]) {
@@ -104,7 +112,7 @@ func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krt
 
 		// create a new Join collection which will be stopped along with the dynamic informer. Joining these two collections
 		// ensures events which modify tenant resources trigger a new reconciliation.
-		joined := krtlite.Join(c.DynamicResources, actualResources, krtlite.LeftJoin,
+		joined := krtlite.Join(c.desiredTenantResources, actualResources, krtlite.LeftJoin,
 			dynInf.StopWith())
 		joined.Register(c.reconcileTenantResources(ctx))
 	}
@@ -115,21 +123,22 @@ func (c *TenantResourceController) toTenantResource(ktx krtlite.Context, i *unst
 	return &ActualTenantResource{Object: i}
 }
 
-// reconcileTenantResources reconciles tenant resources.
+// reconcileTenantResources mutates resources in Kubernetes for every Tenant.
 func (c *TenantResourceController) reconcileTenantResources(ctx context.Context) func(krtlite.Event[TenantResource]) {
 	return func(ev krtlite.Event[TenantResource]) {
-		var (
-			latestNR      = ev.Latest().Left
-			dynamicClient = c.client.Resource(latestNR.GroupVersionResource).Namespace(latestNR.Namespace)
+		latestNR := ev.Latest().Left
 
-			desiredObj = ev.Latest().Left.Object // LeftJoined; so Left will never be nil
-			actualObj  *unstructured.Unstructured
-		)
 		l := slog.With("gvr", latestNR.GroupVersionResource.String(),
 			"namespace", latestNR.Namespace,
 			"resourceName", latestNR.ResourceName)
 
+		dynamicClient := c.client.Resource(latestNR.GroupVersionResource).Namespace(latestNR.Namespace)
+
+		// Left is never nil since joinAndRegister performs a LeftJoin.
+		desiredObj := ev.Latest().Left.Object
+
 		switch ev.Type {
+
 		case krtlite.EventAdd:
 			_, err := dynamicClient.Create(ctx, desiredObj, metav1.CreateOptions{})
 			if err != nil {
@@ -147,7 +156,7 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 
 		case krtlite.EventUpdate:
 			if ev.New.Right != nil {
-				actualObj = ev.New.Right.Object
+				actualObj := ev.New.Right.Object
 
 				if reflect.DeepEqual(cleanObj(actualObj), cleanObj(desiredObj)) {
 					l.InfoContext(ctx, "update suppressed -- no substantial modification was found")

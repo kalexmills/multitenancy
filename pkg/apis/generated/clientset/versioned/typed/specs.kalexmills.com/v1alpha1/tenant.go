@@ -39,7 +39,7 @@ type tenants struct {
 	*gentype.ClientWithList[*specskalexmillscomv1alpha1.Tenant, *specskalexmillscomv1alpha1.TenantList]
 }
 
-// newTenants returns a Tenants
+// newTenants returns a tenants
 func newTenants(c *SpecsV1alpha1Client, namespace string) *tenants {
 	return &tenants{
 		gentype.NewClientWithList[*specskalexmillscomv1alpha1.Tenant, *specskalexmillscomv1alpha1.TenantList](

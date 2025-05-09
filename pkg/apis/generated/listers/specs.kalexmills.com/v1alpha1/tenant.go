@@ -35,10 +35,10 @@ func (s *tenantLister) Tenants(namespace string) TenantNamespaceLister {
 	return tenantNamespaceLister{listers.NewNamespaced[*specskalexmillscomv1alpha1.Tenant](s.ResourceIndexer, namespace)}
 }
 
-// TenantNamespaceLister helps list and get Tenants.
+// TenantNamespaceLister helps list and get tenants.
 // All objects returned here must be treated as read-only.
 type TenantNamespaceLister interface {
-	// List lists all Tenants in the indexer for a given namespace.
+	// List lists all tenants in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*specskalexmillscomv1alpha1.Tenant, err error)
 	// Get retrieves the Tenant from the indexer for a given namespace and name.

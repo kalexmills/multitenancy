@@ -14,9 +14,10 @@ import (
 
 // NamespaceController creates and reconciles namespaces. Serves as the home of
 type NamespaceController struct {
-	TenantNamespaces krtlite.Collection[TenantNamespace] // TODO: hide these behind a getter
-
 	client client.Client
+
+	// collections owned by this controller.
+	tenantNamespaces krtlite.Collection[TenantNamespace]
 }
 
 func NewNamespaceController(
@@ -34,10 +35,14 @@ func NewNamespaceController(
 	}
 
 	// Track TenantNamespace groupings and create namespaces
-	res.TenantNamespaces = krtlite.FlatMap(tenants, res.tenantToNamespaces(namespaces), opts...)
-	res.TenantNamespaces.Register(res.reconcileNamespaces(ctx))
+	res.tenantNamespaces = krtlite.FlatMap(tenants, res.tenantToNamespaces(namespaces), opts...)
+	res.tenantNamespaces.Register(res.reconcileNamespaces(ctx))
 
 	return res
+}
+
+func (c *NamespaceController) TenantNamespaces() krtlite.Collection[TenantNamespace] {
+	return c.tenantNamespaces
 }
 
 func (c *NamespaceController) tenantToNamespaces(

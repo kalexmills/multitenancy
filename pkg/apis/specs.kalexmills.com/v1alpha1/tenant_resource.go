@@ -6,8 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// TODO: fix generated code (it's broken)
-
 //+genclient
 //+kubebuilder:resource:scope=Cluster
 //+kubebuilder:subresource:status
@@ -36,8 +34,8 @@ type TenantResourceSpec struct {
 	Resource metav1.GroupVersionResource `json:"resource"`
 
 	// Manifest is the entire YAML spec to copy into each namespace for this resource.
-	// +kubebuilder:pruning:PreserveUnknownFields
-	// +kubebuilder:validation:Schemaless
+	//+kubebuilder:pruning:PreserveUnknownFields
+	//+kubebuilder:validation:EmbeddedResource
 	Manifest runtime.RawExtension `json:"manifest"`
 }
 
