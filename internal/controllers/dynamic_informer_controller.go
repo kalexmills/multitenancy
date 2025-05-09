@@ -91,9 +91,8 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 
 			c.dynamicInformers.Update(DynamicInformer{
 				Collection: inf,
-
-				gvrKey: gvr,
-				stopCh: stopCh,
+				gvrKey:     gvr,
+				stopCh:     stopCh,
 			})
 
 			l.InfoContext(ctx, "started dynamic informer")

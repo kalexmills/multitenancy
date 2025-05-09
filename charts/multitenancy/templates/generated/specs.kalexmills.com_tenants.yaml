@@ -50,7 +50,7 @@ spec:
                   type: string
                 type: array
               resources:
-                description: Resources is a list to named TenantResources which are
+                description: Resources is a list to named tenantResources which are
                   kept up-to-date in Tenant namespaces.
                 items:
                   type: string

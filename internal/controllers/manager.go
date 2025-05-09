@@ -35,7 +35,7 @@ func NewManager(
 
 	opts := []krtlite.CollectionOption{krtlite.WithContext(ctx)}
 
-	// setup all
+	// setup all informers
 	tc.namespaces = krtlite.NewInformer[*corev1.Namespace, corev1.NamespaceList](ctx, watchClient, opts...)
 	tc.tenants = krtlite.NewInformer[*v1alpha1.Tenant, v1alpha1.TenantList](ctx, watchClient, opts...)
 	tc.tenantResources = krtlite.NewInformer[*v1alpha1.TenantResource, v1alpha1.TenantResourceList](ctx, watchClient, opts...)

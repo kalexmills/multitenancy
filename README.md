@@ -52,7 +52,7 @@ spec:
 Copy the contents above into a file named `sample-tenant.yaml` and apply it to the cluster using `kubectl apply -f sample-tenant.yaml`.
 You should see three new namespaces created, each one should have the labels that we specified.
 
-```shell
+```
 $ kubectl get namespaces -l example.org/tenant-class
 NAME                 STATUS   AGE
 dev-tenant-1         Active   38s
@@ -113,7 +113,7 @@ spec:
 Copy the above into a file named `sample-resources.yaml` and apply it using `kubectl apply -f sample-resources.yaml`.
 You should see ResourceQuotas and Secrets created in each namespace.
 
-```shell
+```
 $ kubectl get resourcequota -A -l multitenancy/tenant
 NAMESPACE      NAME                 AGE  REQUEST                                LIMIT
 dev-tenant-1   dev-resource-quota   1m   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
@@ -127,3 +127,29 @@ dev-tenant-2   vault-access-key   Opaque   1      50m
 dev-tenant-3   vault-access-key   Opaque   1      19h
 ```
 
+`TenantResources` are consistent. Attempts to update or delete them result in the resources being recreated or
+reverted back to their desired state. To demonstrate this, run the following command to watch resource quotas.
+
+```
+$ kubectl get resourcequotas -A -l multitenancy/tenant --watch
+NAMESPACE      NAME                 AGE     REQUEST                                LIMIT
+dev-tenant-1   dev-resource-quota   101s    cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+dev-tenant-2   dev-resource-quota   3m22s   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+dev-tenant-3   dev-resource-quota   19h     cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+dev-tenant-1   dev-resource-quota   2m35s   cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+ 
+```
+
+From a separate terminal, delete one of the ResourceQuotas.
+
+```
+$ kubectl delete resourcequota dev-resource-quota -n dev-tenant-1
+```
+
+You should see two events in the terminal running the watch. The first is from deleting the resource, the second is from
+the multitenancy controller recreating the resource.
+
+```
+dev-tenant-1   dev-resource-quota   0s                                             
+dev-tenant-1   dev-resource-quota   0s      cpu: 0/5, memory: 0/10Gi, pods: 0/10   
+```

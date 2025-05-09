@@ -42,6 +42,7 @@ func NewTenantResourceController(
 	}
 
 	res.desiredTenantResources = krtlite.FlatMap(tenantNamespaces, res.namespaceToDesiredResource, opts...)
+
 	dynamicInformers.Register(res.joinAndRegister(ctx))
 
 	return res
