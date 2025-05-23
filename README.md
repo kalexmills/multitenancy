@@ -153,3 +153,10 @@ the multitenancy controller recreating the resource.
 dev-tenant-1   dev-resource-quota   0s                                             
 dev-tenant-1   dev-resource-quota   0s      cpu: 0/5, memory: 0/10Gi, pods: 0/10   
 ```
+
+## Where are the tests?
+
+This entire repository is an experiment to test the API of [krt-lite](https://github.com/kalexmills/krt-lite). In a way,
+the whole repo is intended as test code. Should we test the test? Maybe, but I don't wash my soap.
+
+THat said, once things are more mature this repo should definitely demonstrate some patterns for effective testing.

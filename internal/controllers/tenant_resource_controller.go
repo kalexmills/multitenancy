@@ -16,7 +16,7 @@ import (
 const tenantLabel = "multitenancy/tenant"
 const tenantResourceLabel = "multitenancy/tenant-resource"
 
-// TenantResourceController creates tenant resources.
+// TenantResourceController creates tenant resources. Owns the DesiredTenantResource collection.
 type TenantResourceController struct {
 	client          dynamic.Interface
 	tenantResources krtlite.Collection[*v1alpha1.TenantResource]
@@ -48,6 +48,8 @@ func NewTenantResourceController(
 	return res
 }
 
+// DesiredTenantResources returns a collection of DesiredTenantResource, which is kept in sync with TenantResource CRs
+// in k8s.
 func (c *TenantResourceController) DesiredTenantResources() krtlite.Collection[DesiredTenantResource] {
 	return c.desiredTenantResources
 }
@@ -62,6 +64,7 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 	resources := krtlite.Fetch(ktx, c.tenantResources, krtlite.MatchNames(tns.Tenant.Spec.Resources...))
 
 	for _, r := range resources {
+		// fetch the desired manifest and store it in the DesiredTenantResource.
 		ext := r.Spec.Manifest
 
 		var mapAny map[string]any
@@ -79,7 +82,8 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 			labels = map[string]string{}
 		}
 
-		// set required labels for tracking
+		// set labels used to reconstruct the key for actual resources. In production, this controller would need to be
+		// deployed along with a ValidatingWebhook that prevents updates to these fields by other users.
 		labels[tenantResourceLabel] = r.Name
 		labels[tenantLabel] = tns.Tenant.Name
 		obj.SetLabels(labels)
@@ -95,8 +99,16 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 	return result
 }
 
-// joinAndRegister joins ActualResources from newly created DesiredTenantResources with desiredTenantResources managed by this
-// controller.
+// joinAndRegister listens for new DynamicInformers. When one is created, it creates a new joined collection, which
+// merges events from two event streams: 1) actual resource state changes, 2) desired resource state changes. These two
+// event streams are joined based on a common key. The resulting collection will receive an event if either desired or
+// actual state is changed.
+//
+// For instance, consider a Secret foo created by a TenantResource. Changes to the TenantResource manifest reflect
+// changes in the desired state of foo. If the TenantResource manifest is changed to add a new label to the secret,
+// an update event will be reflected in the joined collection. Changes to the Secret reflect changes in the actual state
+// of foo. If the secret is deleted, an event will be reflected in the joined collection. A reconciler listening to the
+// joined collection can act on any change to the desired or actual state of the resource.
 func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krtlite.Event[DynamicInformer]) {
 	return func(ev krtlite.Event[DynamicInformer]) {
 		if ev.Type != krtlite.EventAdd {
@@ -111,8 +123,8 @@ func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krt
 		actualResources := krtlite.Map(dynInf.Collection, c.toTenantResource,
 			dynInf.StopWith())
 
-		// create a new Join collection which will be stopped along with the dynamic informer. Joining these two collections
-		// ensures events which modify tenant resources trigger a new reconciliation.
+		// create a new Join collection. The joined collection will be stopped whenever the associated DynamicInformer is
+		// stopped. Performing a LeftJoin ensures that the Desired resource is alwys present in the resulting object.
 		joined := krtlite.Join(c.desiredTenantResources, actualResources, krtlite.LeftJoin,
 			dynInf.StopWith())
 		joined.Register(c.reconcileTenantResources(ctx))
@@ -124,7 +136,7 @@ func (c *TenantResourceController) toTenantResource(ktx krtlite.Context, i *unst
 	return &ActualTenantResource{Object: i}
 }
 
-// reconcileTenantResources mutates resources in Kubernetes for every Tenant.
+// reconcileTenantResources ensures the state of TenantResources are kept up-to-date with the TenantResource definition.
 func (c *TenantResourceController) reconcileTenantResources(ctx context.Context) func(krtlite.Event[TenantResource]) {
 	return func(ev krtlite.Event[TenantResource]) {
 		latestNR := ev.Latest().Left
@@ -140,7 +152,10 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 
 		switch ev.Type {
 
+		// Add events for a Left Join are only fired when the desired state is created.
 		case krtlite.EventAdd:
+
+			// create the object in the cluster -- or replace it, if we didn't clean up.
 			_, err := dynamicClient.Create(ctx, desiredObj, metav1.CreateOptions{})
 			if err != nil {
 				if !errors.IsAlreadyExists(err) {
@@ -155,10 +170,14 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 			}
 			l.InfoContext(ctx, "resource created")
 
+		// Update events for a LeftJoin are received anytime the actual or the desired state has changed.
 		case krtlite.EventUpdate:
+
+			// if actual state exists -- check to see if an update is required
 			if ev.New.Right != nil {
 				actualObj := ev.New.Right.Object
 
+				// compare objects ignoring status, resourceVersion, generation, and managedFields.
 				if reflect.DeepEqual(cleanObj(actualObj), cleanObj(desiredObj)) {
 					l.InfoContext(ctx, "update suppressed -- no substantial modification was found")
 					return
@@ -179,7 +198,10 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 
 			l.InfoContext(ctx, "resource updated")
 
+		// Delete events for a LeftJoin are only received when the desired state has been removed.
 		case krtlite.EventDelete:
+
+			// remove the actual object from the cluster.
 			err := dynamicClient.Delete(ctx, desiredObj.GetName(), metav1.DeleteOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {

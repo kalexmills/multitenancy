@@ -12,7 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NamespaceController creates and reconciles namespaces. Serves as the home of
+// NamespaceController creates and reconciles namespaces owned by a Tenant. Owns the TenantNamespace collection.
+// Responsible for creating + updating namespaces owned by a Tenant.
 type NamespaceController struct {
 	client client.Client
 
@@ -34,7 +35,7 @@ func NewNamespaceController(
 		krtlite.WithContext(ctx),
 	}
 
-	// Track TenantNamespace groupings and create namespaces
+	// track a collection of all namespaces owned by tenants, ensure they exist in k8s.
 	res.tenantNamespaces = krtlite.FlatMap(tenants, res.tenantToNamespaces(namespaces), opts...)
 	res.tenantNamespaces.Register(res.reconcileNamespaces(ctx))
 
@@ -45,10 +46,12 @@ func (c *NamespaceController) TenantNamespaces() krtlite.Collection[TenantNamesp
 	return c.tenantNamespaces
 }
 
+// tenantToNamespaces maps a Tenant to a list of TenantNamespaces it describes.
 func (c *NamespaceController) tenantToNamespaces(
 	namespaces krtlite.Collection[*corev1.Namespace],
 ) krtlite.FlatMapper[*v1alpha1.Tenant, TenantNamespace] {
 	return func(ktx krtlite.Context, tenant *v1alpha1.Tenant) []TenantNamespace {
+		// fetch actual namespaces from k8s
 		namespaces := krtlite.Fetch(ktx, namespaces, krtlite.MatchNames(tenant.Spec.Namespaces...))
 
 		byName := make(map[string]*corev1.Namespace)
@@ -58,11 +61,13 @@ func (c *NamespaceController) tenantToNamespaces(
 
 		var result []TenantNamespace
 		for _, nsName := range tenant.Spec.Namespaces {
+			// add any namespaces we didn't find in k8s
 			ns, ok := byName[nsName]
 			if !ok {
 				ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
 			}
 
+			// ensure each namespace has the desired set of labels and a label we use to identify the tenant.
 			ns.Labels = labels.Merge(tenant.Spec.Labels, map[string]string{tenantLabel: tenant.Name})
 
 			result = append(result, TenantNamespace{
@@ -125,7 +130,7 @@ func (c *NamespaceController) reconcileNamespaces(ctx context.Context) func(krtl
 		case krtlite.EventDelete:
 			l.Info("namespace no longer managed by tenant")
 
-			// do not delete the namespace, remove the tenantResource label instead.
+			// do NOT delete the namespace, remove the tenantResource label instead.
 			delete(ns.Labels, tenantResourceLabel)
 			err := c.client.Update(ctx, ns)
 			if err != nil {

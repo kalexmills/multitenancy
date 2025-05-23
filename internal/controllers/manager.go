@@ -40,6 +40,8 @@ func NewManager(
 	tc.tenants = krtlite.NewInformer[*v1alpha1.Tenant, v1alpha1.TenantList](ctx, watchClient, opts...)
 	tc.tenantResources = krtlite.NewInformer[*v1alpha1.TenantResource, v1alpha1.TenantResourceList](ctx, watchClient, opts...)
 
+	// setup controllers for any types we need to watch. We also set up some dynamic watches at runtime via the
+	// DynamicInformerController.
 	tc.cNamespaces = NewNamespaceController(ctx, watchClient,
 		tc.Namespaces(), tc.Tenants())
 
@@ -52,13 +54,17 @@ func NewManager(
 	return tc
 }
 
+// Namespaces is an informer-backed collection of Namespaces in Kubernetes.
 func (m *Manager) Namespaces() krtlite.Collection[*corev1.Namespace] {
 	return m.namespaces
 }
 
+// Tenants is an informer-backed collection of Tenants CRs in Kubernetes.
 func (m *Manager) Tenants() krtlite.Collection[*v1alpha1.Tenant] {
 	return m.tenants
 }
+
+// TenantResources is an informer-backed collection of TenantResource CRs in Kubernetes.
 func (m *Manager) TenantResources() krtlite.Collection[*v1alpha1.TenantResource] {
 	return m.tenantResources
 }

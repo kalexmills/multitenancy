@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// A DesiredTenantResource represents the desired state of a TenantResource in a namespace.
+// A DesiredTenantResource represents the desired state of a TenantResource in a particular.
 type DesiredTenantResource struct {
 	TenantName           string
 	Namespace            string
@@ -16,11 +16,13 @@ type DesiredTenantResource struct {
 	GroupVersionResource schema.GroupVersionResource
 }
 
+// Key identifies each DesiredTenantResource by (TenantName, Namespace, GroupVersionKind, ResourceName).
 func (t DesiredTenantResource) Key() string {
-	return strings.Join([]string{t.TenantName, t.ResourceName, t.Namespace}, "/")
+	return strings.Join([]string{t.TenantName, t.Namespace, t.Object.GroupVersionKind().String(), t.ResourceName}, "/")
 }
 
-// TenantResource represents both an DesiredTenantResource and ActualTenantResource whoch are the same key.
+// TenantResource represents both an DesiredTenantResource and ActualTenantResource, both of which will have matching
+// keys.
 type TenantResource = krtlite.Joined[DesiredTenantResource, ActualTenantResource]
 
 // ActualTenantResource represents the actual state of a TenantResource from the cluster.
@@ -28,10 +30,13 @@ type ActualTenantResource struct {
 	Object *unstructured.Unstructured
 }
 
+// Key identifies each ActualTenantResource by (TenantName, Namespace, GroupVersionKind, ResourceName).
+// TenantName and ResourceName are each fetched from labels on the resource.
 func (r ActualTenantResource) Key() string {
 	return strings.Join([]string{
 		r.Object.GetLabels()[tenantLabel],
-		r.Object.GetLabels()[tenantResourceLabel],
 		r.Object.GetNamespace(),
+		r.Object.GroupVersionKind().String(),
+		r.Object.GetLabels()[tenantResourceLabel],
 	}, "/")
 }

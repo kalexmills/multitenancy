@@ -9,6 +9,7 @@ import (
 )
 
 // DynamicInformer represents an informer-backed collection which is created by the multitenancy controller at runtime.
+// Used to listen for changes to resources mentioned by kind in TenantResource CRs.
 type DynamicInformer struct {
 	Collection krtlite.Collection[*unstructured.Unstructured]
 
@@ -19,6 +20,7 @@ type DynamicInformer struct {
 	closeStop *sync.Once
 }
 
+// Key identifies a DynamicInformer by GroupVersionResource.
 func (i DynamicInformer) Key() string {
 	return i.gvrKey.Key()
 }
@@ -39,6 +41,7 @@ type GroupVersionResource struct {
 	metav1.GroupVersionResource
 }
 
+// Key identifies a GroupVersionResource by (Group, Version, Resource)
 func (g GroupVersionResource) Key() string {
 	return strings.Join([]string{g.Group, g.Version, g.Resource}, ",")
 }
