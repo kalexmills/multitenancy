@@ -127,7 +127,7 @@ dev-tenant-2   vault-access-key   Opaque   1      50m
 dev-tenant-3   vault-access-key   Opaque   1      19h
 ```
 
-`TenantResources` are consistent. Attempts to update or delete them result in the resources being recreated or
+`TenantResources` are persistent. Attempts to update or delete them result in the resources being recreated or
 reverted back to their desired state. To demonstrate this, run the following command to watch resource quotas.
 
 ```
