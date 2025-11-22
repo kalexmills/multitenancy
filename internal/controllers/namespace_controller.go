@@ -98,7 +98,9 @@ func (c *NamespaceController) reconcileNamespaces(ctx context.Context) func(krtl
 			if ns.CreationTimestamp.IsZero() {
 				err = c.client.Create(ctx, ns)
 				if !errors.IsAlreadyExists(err) {
-					l.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
+					if err != nil {
+						l.ErrorContext(ctx, "error creating ns", "err", err, "ns", ns.Name)
+					}
 					return
 				}
 			}
