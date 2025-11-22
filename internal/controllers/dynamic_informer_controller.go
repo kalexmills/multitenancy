@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"sync"
 )
 
 // DynamicInformerController stores a collection of DynamicInformers -- a collection of collections. The multitenancy
@@ -16,11 +17,15 @@ import (
 // created or delete, new informers will need to be created or deleted. This controller ensures these informers are
 // life-cycled properly.
 type DynamicInformerController struct {
-	client          dynamic.Interface
+	client dynamic.Interface
+
+	// input collections
 	tenantResources krtlite.Collection[*specsv1alpha1.TenantResource]
 
-	// collections owned by this controller.
-	gvrCollection    krtlite.Collection[GroupVersionResource]
+	// internal collections
+	gvrCollection krtlite.Collection[GroupVersionResource]
+
+	// output collections
 	dynamicInformers krtlite.StaticCollection[*DynamicInformer]
 }
 
@@ -50,11 +55,6 @@ func NewDynamicInformerController(
 	res.dynamicInformers = krtlite.NewStaticCollection[*DynamicInformer](res.gvrCollection, nil, opts...)
 
 	return res
-}
-
-// GVRCollection is a collection of all GroupVersionResources used in active TenantNamespaces.
-func (c *DynamicInformerController) GVRCollection() krtlite.Collection[GroupVersionResource] {
-	return c.gvrCollection
 }
 
 // DynamicInformers is a collection of DynamicInformers keyed by the GroupVersionResource they watch.
@@ -107,6 +107,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 				Collection: inf,
 				gvrKey:     gvr,
 				stopCh:     stopCh,
+				closeStop:  &sync.Once{},
 			})
 
 			l.InfoContext(ctx, "started dynamic informer")

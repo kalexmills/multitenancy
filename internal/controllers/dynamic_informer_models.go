@@ -44,7 +44,7 @@ type GroupVersionResource struct {
 
 // Key identifies a GroupVersionResource by (Group, Version, Resource)
 func (g GroupVersionResource) Key() string {
-	return strings.Join([]string{g.Group, g.Version, g.Resource}, ",")
+	return strings.Join([]string{g.Group, g.Version, g.Resource}, "/")
 }
 
 func (g GroupVersionResource) GroupVersion() metav1.GroupVersion {

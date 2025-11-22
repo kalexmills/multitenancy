@@ -276,5 +276,4 @@ var _ = Describe("NamespaceController", func() {
 			})
 		})
 	})
-
 })
