@@ -150,7 +150,8 @@ var _ = Describe("DynamicInformerController", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(dynamicInfCtrl.DynamicInformers().GetKey("apps/v1/deployments")).To(BeNil())
 			}).Should(Succeed())
-
+			
+			// verify that the informer was stopped
 			Expect(dynamicInf.stopCh).To(BeClosed())
 		})
 	})

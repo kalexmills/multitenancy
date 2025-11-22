@@ -97,7 +97,7 @@ var _ = Describe("NamespaceController", func() {
 			}).Should(Succeed())
 		})
 
-		It("should output a TenantNamespace per namespace", func() {
+		It("should output a TenantNamespace entry per namespace", func() {
 			namespaceCtrl.TenantNamespaces().WaitUntilSynced(ctx.Done())
 
 			tenants.Update(&v1alpha1.Tenant{
@@ -183,7 +183,7 @@ var _ = Describe("NamespaceController", func() {
 			}).Should(Succeed())
 		})
 
-		It("should output a TenantNamespace when namespaces are added", func() {
+		It("should output a TenantNamespace entry when namespaces are added", func() {
 			namespaceCtrl.TenantNamespaces().WaitUntilSynced(ctx.Done())
 
 			tenant := &v1alpha1.Tenant{
@@ -207,7 +207,7 @@ var _ = Describe("NamespaceController", func() {
 			}).Should(Succeed())
 		})
 
-		It("should delete associated TenantNamespaces", func() {
+		It("should remove a TenantNamespace entry when namespaces are removed", func() {
 			namespaceCtrl.TenantNamespaces().WaitUntilSynced(ctx.Done())
 
 			tenant := &v1alpha1.Tenant{
@@ -256,7 +256,7 @@ var _ = Describe("NamespaceController", func() {
 			})
 		})
 
-		It("should remove any deleted TenantNamespaces", func() {
+		It("should remove a TenantNamespaces entry when tenants are removed", func() {
 			tenant := &v1alpha1.Tenant{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 				Spec: v1alpha1.TenantSpec{

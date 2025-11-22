@@ -68,3 +68,12 @@ func (m *Manager) Tenants() krtlite.Collection[*v1alpha1.Tenant] {
 func (m *Manager) TenantResources() krtlite.Collection[*v1alpha1.TenantResource] {
 	return m.tenantResources
 }
+
+func (m *Manager) WaitUntilSynced(stop <-chan struct{}) {
+	m.namespaces.WaitUntilSynced(stop)
+	m.tenants.WaitUntilSynced(stop)
+	m.tenantResources.WaitUntilSynced(stop)
+	m.cNamespaces.TenantNamespaces().WaitUntilSynced(stop)
+	m.cDynamicInformers.DynamicInformers().WaitUntilSynced(stop)
+	m.cDynamicResources.DesiredTenantResources().WaitUntilSynced(stop)
+}

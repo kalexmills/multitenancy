@@ -16,7 +16,8 @@ import (
 const tenantLabel = "multitenancy/tenant"
 const tenantResourceLabel = "multitenancy/tenant-resource"
 
-// TenantResourceController creates tenant resources. Owns the DesiredTenantResource collection.
+// TenantResourceController creates copies of TenantResources in tenant namespaces. Owns the DesiredTenantResource
+// collection.
 type TenantResourceController struct {
 	client          dynamic.Interface
 	tenantResources krtlite.Collection[*v1alpha1.TenantResource]
