@@ -167,4 +167,30 @@ var _ = Describe("NamespaceController", func() {
 		})
 	})
 
+	When("deleting a tenant", func() {
+		It("should remove tenant labels from all namespaces", func() {
+			tenant := &v1alpha1.Tenant{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+				Spec: v1alpha1.TenantSpec{
+					Namespaces: []string{"foo"},
+				},
+			}
+			tenants.Update(tenant)
+
+			Eventually(func(g Gomega) {
+				var ns corev1.Namespace
+				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "foo"}, &ns)).To(Succeed())
+				g.Expect(ns.Labels[tenantLabel]).To(Equal("foo"))
+			}).Should(Succeed())
+
+			tenants.Delete("foo")
+
+			Eventually(func(g Gomega) {
+				var ns corev1.Namespace
+				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "foo"}, &ns)).To(Succeed())
+				g.Expect(ns.Labels[tenantLabel]).To(BeEmpty())
+			})
+		})
+	})
+
 })
