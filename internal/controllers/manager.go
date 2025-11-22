@@ -20,12 +20,13 @@ type Manager struct {
 	tenants         krtlite.Collection[*v1alpha1.Tenant]
 	tenantResources krtlite.Collection[*v1alpha1.TenantResource]
 
+	// child controllers
 	cNamespaces       *NamespaceController
 	cDynamicResources *TenantResourceController
 	cDynamicInformers *DynamicInformerController
 }
 
-// NewManager creates and starts a new manager. The manager will stop when the provided context is cancelled.
+// NewManager creates and starts a new manager. The manager will stop when the provided context is canceled.
 func NewManager(
 	ctx context.Context,
 	watchClient client.WithWatch,
@@ -35,13 +36,12 @@ func NewManager(
 
 	opts := []krtlite.CollectionOption{krtlite.WithContext(ctx)}
 
-	// setup all informers
+	// Set up informers to watch Kubernetes for Namespaces, Tenants, and TenantResources.
 	tc.namespaces = krtlite.NewInformer[*corev1.Namespace, corev1.NamespaceList](ctx, watchClient, opts...)
 	tc.tenants = krtlite.NewInformer[*v1alpha1.Tenant, v1alpha1.TenantList](ctx, watchClient, opts...)
 	tc.tenantResources = krtlite.NewInformer[*v1alpha1.TenantResource, v1alpha1.TenantResourceList](ctx, watchClient, opts...)
 
-	// setup controllers for any types we need to watch. We also set up some dynamic watches at runtime via the
-	// DynamicInformerController.
+	// setup child controllers, passing informers-backed collections as dependencies.
 	tc.cNamespaces = NewNamespaceController(ctx, watchClient,
 		tc.Namespaces(), tc.Tenants())
 

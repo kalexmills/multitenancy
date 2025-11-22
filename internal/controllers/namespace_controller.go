@@ -64,7 +64,9 @@ func (c *NamespaceController) tenantToNamespaces(
 			// add any namespaces we didn't find in k8s
 			ns, ok := byName[nsName]
 			if !ok {
-				ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+				ns = &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: nsName},
+				}
 			}
 
 			// ensure each namespace has the desired set of labels and a label we use to identify the tenant.
@@ -130,8 +132,8 @@ func (c *NamespaceController) reconcileNamespaces(ctx context.Context) func(krtl
 		case krtlite.EventDelete:
 			l.Info("namespace no longer managed by tenant")
 
-			// do NOT delete the namespace, remove the tenantResource label instead.
-			delete(ns.Labels, tenantResourceLabel)
+			// do NOT delete the namespace, remove the tenant label instead
+			delete(ns.Labels, tenantLabel)
 			err := c.client.Update(ctx, ns)
 			if err != nil {
 				l.ErrorContext(ctx, "error updating namespace to remove tenant label", "err", err, "ns", ns.Name)

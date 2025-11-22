@@ -21,8 +21,7 @@ func (t DesiredTenantResource) Key() string {
 	return strings.Join([]string{t.TenantName, t.Namespace, t.Object.GroupVersionKind().String(), t.ResourceName}, "/")
 }
 
-// TenantResource represents both an DesiredTenantResource and ActualTenantResource, both of which will have matching
-// keys.
+// TenantResource is a pair of DesiredTenantResource and ActualTenantResource, with matching keys.
 type TenantResource = krtlite.Joined[DesiredTenantResource, ActualTenantResource]
 
 // ActualTenantResource represents the actual state of a TenantResource from the cluster.

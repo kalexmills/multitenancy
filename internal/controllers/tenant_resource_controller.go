@@ -30,7 +30,7 @@ func NewTenantResourceController(
 	client dynamic.Interface,
 	tenantResources krtlite.Collection[*v1alpha1.TenantResource],
 	tenantNamespaces krtlite.Collection[TenantNamespace],
-	dynamicInformers krtlite.Collection[DynamicInformer],
+	dynamicInformers krtlite.Collection[*DynamicInformer],
 ) *TenantResourceController {
 	res := &TenantResourceController{
 		client:          client,
@@ -82,8 +82,8 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 			labels = map[string]string{}
 		}
 
-		// set labels used to reconstruct the key for actual resources. In production, this controller would need to be
-		// deployed along with a ValidatingWebhook that prevents updates to these fields by other users.
+		// Set labels used to reconstruct the collection key for actual resources. In production, this controller would need
+		// to be deployed along with a ValidatingWebhook that prevents updates to these fields by other users.
 		labels[tenantResourceLabel] = r.Name
 		labels[tenantLabel] = tns.Tenant.Name
 		obj.SetLabels(labels)
@@ -101,7 +101,7 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 
 // joinAndRegister listens for new DynamicInformers. When one is created, it creates a new joined collection, which
 // merges events from two event streams: 1) actual resource state changes, 2) desired resource state changes. These two
-// event streams are joined based on a common key. The resulting collection will receive an event if either desired or
+// event streams are joined based on a common key. The resulting collection will process an event if either desired or
 // actual state is changed.
 //
 // For instance, consider a Secret foo created by a TenantResource. Changes to the TenantResource manifest reflect
@@ -109,8 +109,8 @@ func (c *TenantResourceController) namespaceToDesiredResource(ktx krtlite.Contex
 // an update event will be reflected in the joined collection. Changes to the Secret reflect changes in the actual state
 // of foo. If the secret is deleted, an event will be reflected in the joined collection. A reconciler listening to the
 // joined collection can act on any change to the desired or actual state of the resource.
-func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krtlite.Event[DynamicInformer]) {
-	return func(ev krtlite.Event[DynamicInformer]) {
+func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krtlite.Event[*DynamicInformer]) {
+	return func(ev krtlite.Event[*DynamicInformer]) {
 		if ev.Type != krtlite.EventAdd {
 			return
 		}
@@ -119,14 +119,15 @@ func (c *TenantResourceController) joinAndRegister(ctx context.Context) func(krt
 
 		slog.InfoContext(ctx, "starting informer", "gvr", dynInf.Key())
 
-		// map resources from the informer to align the keyspaces.
+		// Map resources from the informer to align the keyspaces.
 		actualResources := krtlite.Map(dynInf.Collection, c.toTenantResource,
+			// Passing StopWith ensures that this collection is stopped when the DynamicInformer is stopped.
 			dynInf.StopWith())
 
-		// create a new Join collection. The joined collection will be stopped whenever the associated DynamicInformer is
-		// stopped. Performing a LeftJoin ensures that the Desired resource is alwys present in the resulting object.
+		// Create a new Join collection. Performing a LeftJoin ensures that the Desired resource is alwys present in the
+		// resulting object.
 		joined := krtlite.Join(c.desiredTenantResources, actualResources, krtlite.LeftJoin,
-			dynInf.StopWith())
+			dynInf.StopWith()) // stop this collection when the DynamicInformer is stopped.
 		joined.Register(c.reconcileTenantResources(ctx))
 	}
 }
@@ -147,12 +148,12 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 
 		dynamicClient := c.client.Resource(latestNR.GroupVersionResource).Namespace(latestNR.Namespace)
 
-		// Left is never nil since joinAndRegister performs a LeftJoin.
-		desiredObj := ev.Latest().Left.Object
+		// latestNR is never nil since joinAndRegister performs a LeftJoin.
+		desiredObj := latestNR.Object
 
 		switch ev.Type {
 
-		// Add events for a Left Join are only fired when the desired state is created.
+		// Add events are only fired when the desired state is created, since this controller is a LeftJoined collection.
 		case krtlite.EventAdd:
 
 			// create the object in the cluster -- or replace it, if we didn't clean up.
@@ -205,10 +206,12 @@ func (c *TenantResourceController) reconcileTenantResources(ctx context.Context)
 			err := dynamicClient.Delete(ctx, desiredObj.GetName(), metav1.DeleteOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					slog.ErrorContext(ctx, "error deleting object", "error", err)
+					l.ErrorContext(ctx, "error deleting object", "error", err)
 				}
+				l.InfoContext(ctx, "resource already deleted")
+			} else {
+				l.InfoContext(ctx, "resource deleted")
 			}
-			l.InfoContext(ctx, "resource deleted")
 		}
 	}
 }

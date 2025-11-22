@@ -41,7 +41,7 @@ lint: ## Runs go fmt.
 
 .PHONY: test
 test: ## Runs go test.
-	@CGO_ENABLED=1 GOTRACEBACK=all go test -failfast -race -v ./...
+	@CGO_ENABLED=0 GOTRACEBACK=all go test -failfast -race -v ./...
 
 .PHONY: bench
 bench: ## Runs go test with benchmarks.
@@ -79,6 +79,9 @@ IMG?=$(IMG_REPO):$(IMG_TAG)
 .PHONY: docker-build
 docker-build: build ## Rebuilds binary and builds the docker image.
 	@docker build -t ${IMG} .
+
+.PHONY: test-e2e
+test:
 
 ##
 # Make targets for kind cluster

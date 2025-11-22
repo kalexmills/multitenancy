@@ -8,8 +8,8 @@ import (
 	"sync"
 )
 
-// DynamicInformer represents an informer-backed collection which is created by the multitenancy controller at runtime.
-// Used to listen for changes to resources mentioned by kind in TenantResource CRs.
+// A DynamicInformer is an informer-backed collection which is created by the multitenancy controller at runtime. Used to
+// listen for changes to resources mentioned by kind in TenantResource CRs.
 type DynamicInformer struct {
 	Collection krtlite.Collection[*unstructured.Unstructured]
 
@@ -21,18 +21,19 @@ type DynamicInformer struct {
 }
 
 // Key identifies a DynamicInformer by GroupVersionResource.
-func (i DynamicInformer) Key() string {
+func (i *DynamicInformer) Key() string {
 	return i.gvrKey.Key()
 }
 
-func (i DynamicInformer) Stop() {
+func (i *DynamicInformer) Stop() {
 	i.closeStop.Do(func() {
 		close(i.stopCh)
 	})
 }
 
-// StopWith returns a CollectionOption which ensures a collection will be stopped along with this DynamicInformer.
-func (i DynamicInformer) StopWith() krtlite.CollectionOption {
+// StopWith returns a CollectionOption which can be passed to new Collections, to ensure they stop along when this
+// DynamicInformer is stopped.
+func (i *DynamicInformer) StopWith() krtlite.CollectionOption {
 	return krtlite.WithStop(i.stopCh)
 }
 

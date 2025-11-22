@@ -21,7 +21,7 @@ type DynamicInformerController struct {
 
 	// collections owned by this controller.
 	gvrCollection    krtlite.Collection[GroupVersionResource]
-	dynamicInformers krtlite.StaticCollection[DynamicInformer]
+	dynamicInformers krtlite.StaticCollection[*DynamicInformer]
 }
 
 func NewDynamicInformerController(
@@ -39,25 +39,26 @@ func NewDynamicInformerController(
 		krtlite.WithContext(ctx),
 	}
 
-	// to ensure we only set up informers for TenantResources that are actually in use, we map TenantNamespaces to
-	// TenantResources, and form a collection of their GVRs.
+	// To ensure we only set up informers for TenantResources which are actually in use, we map TenantNamespaces to
+	// TenantResources, and form a collection of all GVRs in use across all TenantNamespaces.
 	res.gvrCollection = krtlite.FlatMap(tenantNamespaces, res.mapToGVRs, opts...)
 
-	// then we watch GVRs and create new dynamic informers whenever they are changed. We could FlatMap here, but creating
-	// a new informer breaks the pure function requirement.
+	// Then we watch each resource in gvrCollection, and create a new DynamicInformer whenever they are changed. These
+	// DynamicInformers are stored in a Static collection. We could use FlatMap instead of a static collection, but
+	// creating a new informer is a side effect which breaks the pure function requirement.
 	res.gvrCollection.Register(res.dynamicCollectionHandler(ctx))
-	res.dynamicInformers = krtlite.NewStaticCollection[DynamicInformer](res.gvrCollection, nil, opts...)
+	res.dynamicInformers = krtlite.NewStaticCollection[*DynamicInformer](res.gvrCollection, nil, opts...)
 
 	return res
 }
 
-// GVRCollection is a collection of GroupVersionResource used in active TenantNamespaces.
+// GVRCollection is a collection of all GroupVersionResources used in active TenantNamespaces.
 func (c *DynamicInformerController) GVRCollection() krtlite.Collection[GroupVersionResource] {
 	return c.gvrCollection
 }
 
 // DynamicInformers is a collection of DynamicInformers keyed by the GroupVersionResource they watch.
-func (c *DynamicInformerController) DynamicInformers() krtlite.Collection[DynamicInformer] {
+func (c *DynamicInformerController) DynamicInformers() krtlite.Collection[*DynamicInformer] {
 	return c.dynamicInformers
 }
 
@@ -102,7 +103,7 @@ func (c *DynamicInformerController) dynamicCollectionHandler(ctx context.Context
 				krtlite.WithFilterByLabel(tenantResourceLabel),
 				krtlite.WithStop(stopCh))
 
-			c.dynamicInformers.Update(DynamicInformer{
+			c.dynamicInformers.Update(&DynamicInformer{
 				Collection: inf,
 				gvrKey:     gvr,
 				stopCh:     stopCh,
